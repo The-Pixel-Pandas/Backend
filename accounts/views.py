@@ -1,33 +1,97 @@
-from django.shortcuts import render
-from rest_framework.authtoken.views import ObtainAuthToken
-from rest_framework.authtoken.models import Token
+from django.contrib.auth import authenticate
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.response import Response
 from rest_framework import generics
 from django.contrib.auth import get_user_model
 from accounts.serializer import UserSerializer
 from rest_framework.permissions import AllowAny
+from rest_framework import status
+from accounts.models import Wallet  # Adjust the import path based on your project structure
+from rest_framework.generics import CreateAPIView
+from accounts.models import User
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.generics import CreateAPIView
+from accounts.models import User
+from accounts.serializer import UserSerializer
+from accounts.utils import get_tokens_for_user  # Import the utility function
+from rest_framework.permissions import AllowAny
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.generics import CreateAPIView
+from accounts.models import User
+from accounts.serializer import UserSerializer
+from accounts.utils import get_tokens_for_user  # Import the updated utility function
+from rest_framework.permissions import AllowAny
+from rest_framework.generics import CreateAPIView
+from accounts.utils import get_tokens_for_user
+from rest_framework.permissions import AllowAny
+from rest_framework.generics import CreateAPIView
+from accounts.models import User
+from accounts.serializer import UserSerializer, LoginSerializer
+from accounts.utils import get_tokens_for_user
 
 User = get_user_model()
 
-class LoginView(ObtainAuthToken):
+# Utility function to generate JWT tokens
+def get_tokens_for_user(user):
+    refresh = RefreshToken.for_user(user)
+    return {
+        'access': str(refresh.access_token),
+        'refresh': str(refresh),
+    }
+
+# Login view using JWT
+class LoginView(generics.GenericAPIView):
+    serializer_class = LoginSerializer
+    permission_classes = [AllowAny]
+
     def post(self, request, *args, **kwargs):
-        serializer = self.serializer_class(data=request.data, context={'request': request})
-        serializer.is_valid(raise_exception=True)
-        user = serializer.validated_data['user']
-        token, created = Token.objects.get_or_create(user=user)
-        return Response({
-            'token': token.key,
-            'user_id': user.pk,
-            'email': user.email
-        })
+        print("Login view called")
+        validated_data = self.serializer_class(data=request.data)
+        validated_data.is_valid(raise_exception=True)
+        user = User.objects.get(user_name=validated_data.data['user_name'])
+        if not user.password == validated_data.data['password']:
+            return Response({'detail': 'Invalid credentials'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if user is not None:
+            # Get JWT tokens
+            tokens = get_tokens_for_user(user)
 
 
-class SignupView(generics.CreateAPIView):
+            # Return the user details along with the JWT tokens and token count
+            return Response({
+                'user_id': user.id,  # Udese user_id instead of user.pk
+                'gmail': user.gmail,  # Changed from email to gmail
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'total_balance': user.total_balance,
+                'wallet': user.wallet_field,  # Assuming wallet_field is part of the User model
+                'rank': user.all_rank,
+                'tokens': tokens  # Return both access and refresh tokens
+            })
+        else:
+            return Response({'detail': 'Invalid credentials'}, status=status.HTTP_400_BAD_REQUEST)
+
+# Signup view
+
+class SignupView(CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    permission_classes = [AllowAny]  # اجازه دسترسی بدون احراز هویت
-    
+    permission_classes = [AllowAny]  # Make sure this line is here!
+
     def perform_create(self, serializer):
+        # Create the user
         user = serializer.save()
-        # ایجاد توکن برای کاربر جدید
-        Token.objects.create(user=user)
+
+        # Generate JWT tokens using the updated function
+        tokens = get_tokens_for_user(user)
+
+        # Return user data along with the JWT tokens
+        return Response({
+            'id': user.id,  # Use user_id instead of id
+            'email': user.gmail,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'tokens': tokens  # Returning both access and refresh tokens
+        }, status=status.HTTP_201_CREATED)
