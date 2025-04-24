@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from rest_framework.validators import UniqueValidator
+from .models import Profile
 
 User = get_user_model()
 
@@ -65,3 +66,30 @@ class UserSerializer(serializers.ModelSerializer):
     #         wallet_field=validated_data.get('wallet_field', 0),
     #     )
     #     return user
+
+class ProfileSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source='user.user_name', read_only=True)
+    email = serializers.EmailField(source='user.gmail', read_only=True)
+    first_name = serializers.CharField(source='user.first_name', read_only=True)
+    last_name = serializers.CharField(source='user.last_name', read_only=True)
+
+    class Meta:
+        model = Profile
+        fields = [
+            'id', 'user_name', 'email', 'first_name', 'last_name',
+            'bio', 'location', 'birth_date', 'phone_number',
+            'website', 'profile_picture', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['created_at', 'updated_at']
+
+    def update(self, instance, validated_data):
+        # Handle profile picture upload
+        if 'profile_picture' in validated_data:
+            instance.profile_picture = validated_data.pop('profile_picture')
+        
+        # Update other fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        instance.save()
+        return instance

@@ -30,6 +30,10 @@ from rest_framework.generics import CreateAPIView
 from accounts.models import User
 from accounts.serializer import UserSerializer, LoginSerializer
 from accounts.utils import get_tokens_for_user
+from rest_framework import viewsets, permissions
+from rest_framework.decorators import action
+from .models import Profile
+from .serializer import ProfileSerializer
 
 User = get_user_model()
 
@@ -95,3 +99,27 @@ class SignupView(CreateAPIView):
             'last_name': user.last_name,
             'tokens': tokens  # Returning both access and refresh tokens
         }, status=status.HTTP_201_CREATED)
+
+class ProfileViewSet(viewsets.ModelViewSet):
+    queryset = Profile.objects.all()
+    serializer_class = ProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # Users can only see their own profile
+        return Profile.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        # Automatically associate the profile with the current user
+        serializer.save(user=self.request.user)
+
+    @action(detail=False, methods=['get'])
+    def me(self, request):
+        # Get or create profile for the current user
+        profile, created = Profile.objects.get_or_create(user=request.user)
+        serializer = self.get_serializer(profile)
+        return Response(serializer.data)
+
+    def perform_update(self, serializer):
+        # Ensure users can only update their own profile
+        serializer.save(user=self.request.user)

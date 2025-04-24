@@ -1,6 +1,8 @@
 {
-    "port": 8000,
-    "build": {
-      "location": "iran"
-    }
+    "app": "fervent-antonelli--udq9vabd", 
+    "platform": "django",
+    "django": {
+    "mirror": false,
+    "pythonVersion": "3.12"
+  }
 }
