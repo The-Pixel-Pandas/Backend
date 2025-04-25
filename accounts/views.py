@@ -34,6 +34,8 @@ from rest_framework import viewsets, permissions
 from rest_framework.decorators import action
 from .models import Profile
 from .serializer import ProfileSerializer
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.http import JsonResponse
 
 User = get_user_model()
 
@@ -123,3 +125,7 @@ class ProfileViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         # Ensure users can only update their own profile
         serializer.save(user=self.request.user)
+
+@ensure_csrf_cookie
+def get_csrf_token(request):
+    return JsonResponse({'detail': 'CSRF cookie set'})

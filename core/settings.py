@@ -25,7 +25,11 @@ SECRET_KEY = "django-insecure-v(rq1ogk007#2axhaoa(hri6u%kl1b^v_hrhsn8#ib$q_=1e#q
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+    'fervent-antonelli--udq9vabd.liara.run'  # Your deployed domain
+]
 
 
 AUTH_USER_MODEL = 'accounts.User'  # Ensure you're using the User model from your accounts app
@@ -78,7 +82,6 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "django.middleware.common.CommonMiddleware",
 ]
 
 ROOT_URLCONF = "core.urls"
@@ -155,6 +158,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
+    "http://127.0.0.1:5173",
     "https://fervent-antonelli--udq9vabd.liara.run"
 ]
 
@@ -162,5 +166,12 @@ CORS_ALLOW_CREDENTIALS = True
 
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
+    "http://127.0.0.1:5173",
     "https://fervent-antonelli--udq9vabd.liara.run"
 ]
+
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SECURE = False  # Set to True in production
+CSRF_COOKIE_HTTPONLY = False
+CSRF_USE_SESSIONS = False
+CSRF_COOKIE_DOMAIN = None  # This allows the cookie to be set for localhost
