@@ -1,18 +1,29 @@
 from rest_framework import serializers
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, authenticate
 from rest_framework.validators import UniqueValidator
 from .models import Profile
+from .utils import get_tokens_for_user
 
 User = get_user_model()
 
 
-class LoginSerializer(serializers.ModelSerializer):
+class LoginSerializer(serializers.Serializer):
     user_name = serializers.CharField(required=True)
     password = serializers.CharField(required=True)
 
-    class Meta:
-        model = User
-        fields = ['user_name', 'password']
+    def validate(self, data):
+        user = authenticate(
+            user_name=data['user_name'],
+            password=data['password']
+        )
+        if user is None:
+            raise serializers.ValidationError('Invalid credentials')
+        
+        if not user.is_active:
+            raise serializers.ValidationError('User account is disabled')
+        
+        data['user'] = user
+        return data
 
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
@@ -41,6 +52,28 @@ class UserSerializer(serializers.ModelSerializer):
         if User.objects.filter(gmail=value).exists():
             raise serializers.ValidationError("This gmail is already taken.")
         return value
+
+    def create(self, validated_data):
+        """
+        Create and return a new user with JWT tokens.
+        """
+        # Create the user
+        user = User.objects.create_user(
+            user_name=validated_data['user_name'],
+            gmail=validated_data['gmail'],
+            first_name=validated_data['first_name'],
+            last_name=validated_data['last_name'],
+            password=validated_data['password'],
+            age=validated_data.get('age', 0),
+            avatar=validated_data.get('avatar')
+        )
+        
+        # Generate JWT tokens
+        tokens = get_tokens_for_user(user)
+        
+        # Add tokens to the response
+        validated_data['tokens'] = tokens
+        return user
 
     # def create(self, validated_data):
     #     """

@@ -1,13 +1,41 @@
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
+
+class UserManager(BaseUserManager):
+    def create_user(self, user_name, gmail, password=None, **extra_fields):
+        if not user_name:
+            raise ValueError('The User Name field must be set')
+        if not gmail:
+            raise ValueError('The Gmail field must be set')
+        
+        user = self.model(
+            user_name=user_name,
+            gmail=gmail,
+            **extra_fields
+        )
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, user_name, gmail, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError('Superuser must have is_staff=True.')
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError('Superuser must have is_superuser=True.')
+        
+        return self.create_user(user_name, gmail, password, **extra_fields)
 
 class User(AbstractUser):
     id = models.AutoField(primary_key=True)
+    username = None  # Remove the username field
     user_name = models.CharField(max_length=100, unique=True)
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     age = models.IntegerField(default=0)
-    avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)  # Made nullable
+    avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
     gmail = models.EmailField(unique=True)
     password = models.CharField(max_length=255)
     all_rank = models.IntegerField(default=0)
@@ -15,11 +43,19 @@ class User(AbstractUser):
     weekly_rank = models.IntegerField(default=0)
     wallet_field = models.IntegerField(default=0)
     total_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    user_token = models.CharField(max_length=255, blank=True, null=True)
 
     # Use user_name as the username field
-    username = None  # Remove the username field
     USERNAME_FIELD = 'user_name'
     REQUIRED_FIELDS = ['first_name', 'last_name', 'gmail']
+
+    objects = UserManager()  # Add this line to use our custom manager
+
+    def __str__(self):
+        return self.user_name
+
+    def __str__(self):
+        return self.user_name
 
     def __str__(self):
         return self.user_name
@@ -37,8 +73,9 @@ class Medal(models.Model):
 class LeaderBoard(models.Model):
     leaderboard_id = models.AutoField(primary_key=True)
     start_time = models.DateTimeField()
-    user = models.ForeignKey(User, on_delete=models.CASCADE, to_field='id')  # Correctly referencing 'user_id'
+    user_id_fk = models.ForeignKey(User, on_delete=models.CASCADE, related_name='leaderboards', null=True, blank=True)
     type_id = models.IntegerField()
+    leaderboard_token = models.CharField(max_length=255, blank=True, null=True)
 
     def __str__(self):
         return f"Leaderboard {self.leaderboard_id}"
@@ -67,6 +104,8 @@ class Question(models.Model):
     question_volume = models.IntegerField()
     question_chance_yes = models.DecimalField(max_digits=5, decimal_places=2)
     question_chance_no = models.DecimalField(max_digits=5, decimal_places=2)
+    question_token = models.CharField(max_length=255, blank=True, null=True)
+    question_token = models.CharField(max_length=255, blank=True, null=True)
 
     def __str__(self):
         return self.question_topic
@@ -100,11 +139,11 @@ class Comment(models.Model):
 
 # Wallet Model (related to User)
 class Wallet(models.Model):
-    User_id = models.OneToOneField(User, on_delete=models.CASCADE, related_name="wallet", to_field='id')  # Referencing 'user_id'
-    TotalBalance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    total_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    user_id_fk = models.OneToOneField(User, on_delete=models.CASCADE, related_name="wallet")
 
     def __str__(self):
-        return f"Wallet of {self.User_id.user_name}"
+        return f"Wallet of {self.user_id_fk.user_name}"
 
 
 class Profile(models.Model):

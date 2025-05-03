@@ -23,8 +23,7 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     path('admin/', admin.site.urls),  # Admin route
-    path('api/login/', views.LoginView.as_view(), name='login'),  # Add '/api/' prefix here
-    path('api/signup/', views.SignupView.as_view(), name='signup'),  # Add '/api/' prefix here
+    path('api/', include('accounts.urls')),  # Include all accounts URLs
     # Swagger URL
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
 ]
