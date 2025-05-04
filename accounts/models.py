@@ -44,6 +44,9 @@ class User(AbstractUser):
     wallet_field = models.IntegerField(default=0)
     total_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     user_token = models.CharField(max_length=255, blank=True, null=True)
+    job = models.CharField(max_length=100, blank=True, null=True)
+    gender = models.CharField(max_length=50, blank=True, null=True)
+    favorite_subject = models.CharField(max_length=100, blank=True, null=True)
 
     # Use user_name as the username field
     USERNAME_FIELD = 'user_name'
@@ -151,8 +154,7 @@ class Profile(models.Model):
     bio = models.TextField(max_length=500, blank=True)
     location = models.CharField(max_length=100, blank=True)
     birth_date = models.DateField(null=True, blank=True)
-    phone_number = models.CharField(max_length=15, blank=True)
-    website = models.URLField(blank=True)
+    # Removed phone_number and website fields as per request
     profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -103,17 +103,46 @@ class UserSerializer(serializers.ModelSerializer):
 class ProfileSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.user_name', read_only=True)
     email = serializers.EmailField(source='user.gmail', read_only=True)
-    first_name = serializers.CharField(source='user.first_name', read_only=True)
-    last_name = serializers.CharField(source='user.last_name', read_only=True)
+    bio = serializers.CharField(read_only=True)
+    location = serializers.CharField(read_only=True)
+    birth_date = serializers.DateField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+    updated_at = serializers.DateTimeField(read_only=True)
+    profit = serializers.DecimalField(source='user.total_balance', max_digits=10, decimal_places=2, read_only=True)
+    volume = serializers.DecimalField(source='user.wallet_field', max_digits=10, decimal_places=2, read_only=True)
+    winrate = serializers.SerializerMethodField()
+    rank_total_profit = serializers.IntegerField(source='user.all_rank', read_only=True)
+    rank_total_volume = serializers.IntegerField(source='user.all_rank', read_only=True)
+    rank_monthly_profit = serializers.IntegerField(source='user.monthly_rank', read_only=True)
+    rank_monthly_volume = serializers.IntegerField(source='user.monthly_rank', read_only=True)
+    rank_weekly_profit = serializers.IntegerField(source='user.weekly_rank', read_only=True)
+    rank_weekly_volume = serializers.IntegerField(source='user.weekly_rank', read_only=True)
+    medals = serializers.SerializerMethodField()
+    avatar = serializers.ImageField(source='user.avatar', read_only=True)
+    job = serializers.CharField(source='user.job', read_only=True)
+    gender = serializers.CharField(source='user.gender', read_only=True)
+    age = serializers.IntegerField(source='user.age', read_only=True)
+    favorite_subject = serializers.CharField(source='user.favorite_subject', read_only=True)
 
     class Meta:
         model = Profile
         fields = [
-            'id', 'user_name', 'email', 'first_name', 'last_name',
-            'bio', 'location', 'birth_date', 'phone_number',
-            'website', 'profile_picture', 'created_at', 'updated_at'
+            'id', 'user_name', 'email', 'bio', 'location',
+            'birth_date', 'created_at', 'updated_at',
+            'profit', 'volume', 'winrate', 'rank_total_profit', 'rank_total_volume',
+            'rank_monthly_profit', 'rank_monthly_volume', 'rank_weekly_profit',
+            'rank_weekly_volume', 'medals', 'avatar', 'job', 'gender', 'age',
+            'favorite_subject'
         ]
         read_only_fields = ['created_at', 'updated_at']
+
+    def get_winrate(self, obj):
+        # Implement winrate calculation logic here
+        return 0  # Default value
+
+    def get_medals(self, obj):
+        # Implement medal retrieval logic here
+        return []  # Default empty list
 
     def update(self, instance, validated_data):
         # Handle profile picture upload
