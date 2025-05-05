@@ -1,9 +1,9 @@
 from django.contrib import admin
-from .models import User, Medal, LeaderBoard, TransactionHistory, Question, News, Comment, Wallet, Profile
+from .models import User, Medal, Leaderboard, TransactionHistory, Question, News, Comment, Wallet, Profile
 
 admin.site.register(User)
 admin.site.register(Medal)
-admin.site.register(LeaderBoard)
+admin.site.register(Leaderboard)
 admin.site.register(TransactionHistory)
 admin.site.register(Question)
 admin.site.register(News)

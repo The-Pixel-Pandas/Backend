@@ -120,7 +120,7 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'tahlil_db',  # Replace with your actual database name
-        'USER': 'alibahri',  # Replace with your actual database user
+        'USER': 'postgres',  # Replace with your actual database user
         'PASSWORD': '1234',  # Replace with your actual password
         'HOST': 'localhost',  # Typically 'localhost' for local development
         'PORT': '5432',  # Default PostgreSQL port

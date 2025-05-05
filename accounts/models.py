@@ -1,5 +1,11 @@
-from django.contrib.auth.models import AbstractUser, BaseUserManager
+from django.contrib.auth.models import AbstractUser, BaseUserManager, AbstractBaseUser, PermissionsMixin
 from django.db import models
+from django.utils import timezone
+from django.db.models import Q
+from django.db.models import Count, Sum
+from django.db.models.functions import Coalesce
+from django.db.models import F, ExpressionWrapper, DecimalField
+from django.db.models import Case, When, Value, IntegerField
 
 class UserManager(BaseUserManager):
     def create_user(self, user_name, gmail, password=None, **extra_fields):
@@ -28,41 +34,118 @@ class UserManager(BaseUserManager):
         
         return self.create_user(user_name, gmail, password, **extra_fields)
 
-class User(AbstractUser):
+class User(AbstractBaseUser, PermissionsMixin):
     id = models.AutoField(primary_key=True)
     username = None  # Remove the username field
     user_name = models.CharField(max_length=100, unique=True)
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     age = models.IntegerField(default=0)
-    avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
-    gmail = models.EmailField(unique=True)
+    avatar = models.PositiveIntegerField(choices=[(i, str(i)) for i in range(1, 10)], default=1)
+    email = models.EmailField(unique=True, null=True, blank=True)  # Add email field to match Django's default
+    gmail = models.EmailField(unique=True)  # Keep gmail as the main email field
     password = models.CharField(max_length=255)
     all_rank = models.IntegerField(default=0)
     monthly_rank = models.IntegerField(default=0)
     weekly_rank = models.IntegerField(default=0)
-    wallet_field = models.IntegerField(default=0)
-    total_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    user_token = models.CharField(max_length=255, blank=True, null=True)
-    job = models.CharField(max_length=100, blank=True, null=True)
-    gender = models.CharField(max_length=50, blank=True, null=True)
-    favorite_subject = models.CharField(max_length=100, blank=True, null=True)
+    total_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    wallet_field = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    import uuid
+    user_token = models.CharField(max_length=255, unique=True, default=uuid.uuid4)
+    is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
+    date_joined = models.DateTimeField(default=timezone.now)
 
-    # Use user_name as the username field
+    def save(self, *args, **kwargs):
+        # Keep email and gmail in sync
+        if not self.email and self.gmail:
+            self.email = self.gmail
+        elif not self.gmail and self.email:
+            self.gmail = self.email
+        super().save(*args, **kwargs)
+
+    objects = UserManager()
+
     USERNAME_FIELD = 'user_name'
-    REQUIRED_FIELDS = ['first_name', 'last_name', 'gmail']
-
-    objects = UserManager()  # Add this line to use our custom manager
+    REQUIRED_FIELDS = ['gmail', 'password']
 
     def __str__(self):
         return self.user_name
 
-    def __str__(self):
-        return self.user_name
+    def update_ranks(self):
+        # Update all ranks
+        self.all_rank = self.get_rank('all_time_profit')
+        self.monthly_rank = self.get_rank('monthly_profit')
+        self.weekly_rank = self.get_rank('weekly_profit')
+        self.save()
 
-    def __str__(self):
-        return self.user_name
+    def get_rank(self, category):
+        # Get the rank for the given category
+        if category == 'all_time_profit':
+            return User.objects.filter(
+                total_balance__gt=self.total_balance
+            ).count() + 1
+        elif category == 'monthly_profit':
+            return User.objects.filter(
+                total_balance__gt=self.total_balance
+            ).count() + 1
+        elif category == 'weekly_profit':
+            return User.objects.filter(
+                total_balance__gt=self.total_balance
+            ).count() + 1
+        elif category == 'all_time_volume':
+            return User.objects.filter(
+                wallet_field__gt=self.wallet_field
+            ).count() + 1
+        elif category == 'monthly_volume':
+            return User.objects.filter(
+                wallet_field__gt=self.wallet_field
+            ).count() + 1
+        elif category == 'weekly_volume':
+            return User.objects.filter(
+                wallet_field__gt=self.wallet_field
+            ).count() + 1
+        return 0
+
+    # Custom method to calculate user's score
+    def calculate_score(self):
+        return self.total_balance + self.wallet_field
+
+    # Method to update user's ranks
+    def update_ranks(self):
+        # Update all-time ranks
+        self.all_rank = self.get_rank('all_time_volume')
+        self.monthly_rank = self.get_rank('monthly_profit')
+        self.weekly_rank = self.get_rank('weekly_profit')
+        
+        self.save()
+
+    # Method to update user's token
+    def update_token(self):
+        self.user_token = f'user_token_{self.id}'
+        self.save()
+
+class Leaderboard(models.Model):
+    id = models.AutoField(primary_key=True)
+    start_time = models.DateTimeField()
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='leaderboards', null=True, blank=True)
+    type_id = models.IntegerField()
+    leaderboard_token = models.CharField(max_length=255, unique=True, null=True, blank=True)
     
+    # Add the missing fields
+    total_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    wallet_field = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    all_rank = models.IntegerField(default=0)
+    monthly_rank = models.IntegerField(default=0)
+    weekly_rank = models.IntegerField(default=0)
+
+    class Meta:
+        db_table = 'leaderboard'
+
+    def __str__(self):
+        return f"Leaderboard {self.id} - {self.user.user_name if self.user else 'No User'}"
+    def __str__(self):
+        return self.user_name
 class Medal(models.Model):
     medal_id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=100)
@@ -72,16 +155,7 @@ class Medal(models.Model):
         return self.name
 
 
-# LeaderBoard Model
-class LeaderBoard(models.Model):
-    leaderboard_id = models.AutoField(primary_key=True)
-    start_time = models.DateTimeField()
-    user_id_fk = models.ForeignKey(User, on_delete=models.CASCADE, related_name='leaderboards', null=True, blank=True)
-    type_id = models.IntegerField()
-    leaderboard_token = models.CharField(max_length=255, blank=True, null=True)
 
-    def __str__(self):
-        return f"Leaderboard {self.leaderboard_id}"
 
 
 # TransactionHistory Model
@@ -150,14 +224,61 @@ class Wallet(models.Model):
 
 
 class Profile(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile', primary_key=True)
     bio = models.TextField(max_length=500, blank=True)
     location = models.CharField(max_length=100, blank=True)
     birth_date = models.DateField(null=True, blank=True)
-    # Removed phone_number and website fields as per request
-    profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    profit = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    volume = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    winrate = models.IntegerField(default=0)
+    rank_total_profit = models.IntegerField(default=0)
+    rank_total_volume = models.IntegerField(default=0)
+    rank_monthly_profit = models.IntegerField(default=0)
+    rank_monthly_volume = models.IntegerField(default=0)
+    rank_weekly_profit = models.IntegerField(default=0)
+    rank_weekly_volume = models.IntegerField(default=0)
+    medals = models.JSONField(default=list)
+    avatar = models.PositiveIntegerField(choices=[(i, str(i)) for i in range(1, 10)], default=1)
+    job = models.CharField(max_length=100, null=True, blank=True)
+    gender = models.CharField(max_length=10, null=True, blank=True)
+    age = models.IntegerField(null=True, blank=True)
+    favorite_subject = models.CharField(max_length=100, null=False, blank=True, default='Not specified')
+
+    def save(self, *args, **kwargs):
+        # Ensure all numeric fields are non-negative
+        self.winrate = max(0, min(100, self.winrate))
+        self.rank_total_profit = max(0, self.rank_total_profit)
+        self.rank_total_volume = max(0, self.rank_total_volume)
+        self.rank_monthly_profit = max(0, self.rank_monthly_profit)
+        self.rank_monthly_volume = max(0, self.rank_monthly_volume)
+        self.rank_weekly_profit = max(0, self.rank_weekly_profit)
+        self.rank_weekly_volume = max(0, self.rank_weekly_volume)
+        
+        # Ensure favorite_subject is always a string
+        if self.favorite_subject is None:
+            self.favorite_subject = 'Not specified'
+        elif not isinstance(self.favorite_subject, str):
+            self.favorite_subject = str(self.favorite_subject)
+        
+        super().save(*args, **kwargs)
+
+    def save(self, *args, **kwargs):
+        # Ensure all numeric fields are non-negative
+        self.winrate = max(0, min(100, self.winrate))
+        self.rank_total_profit = max(0, self.rank_total_profit)
+        self.rank_total_volume = max(0, self.rank_total_volume)
+        self.rank_monthly_profit = max(0, self.rank_monthly_profit)
+        self.rank_monthly_volume = max(0, self.rank_monthly_volume)
+        self.rank_weekly_profit = max(0, self.rank_weekly_profit)
+        self.rank_weekly_volume = max(0, self.rank_weekly_volume)
+        
+        # Ensure favorite_subject is always a string
+        if self.favorite_subject is None:
+            self.favorite_subject = 'Not specified'
+        elif not isinstance(self.favorite_subject, str):
+            self.favorite_subject = str(self.favorite_subject)
+        
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.user.user_name}'s Profile"
