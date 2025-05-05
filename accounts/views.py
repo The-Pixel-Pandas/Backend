@@ -28,32 +28,54 @@ class LoginView(generics.GenericAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']  # Get the authenticated user
-        
+
         if user is not None:
             # Generate JWT tokens
             refresh = RefreshToken.for_user(user)
-            
+
+            # Check if the username is "admin"
+            is_admin = user.user_name == "admin"
+
+            # Fetch the user's profile
+            profile = Profile.objects.get(user=user)
+
+            # Prepare the response
             return Response({
                 'user': {
                     'id': user.id,
-                    'gmail': user.gmail,
+                    'user_name': user.user_name,
+                    'email': user.gmail,
+                    'age': user.age,
+                    'avatar': user.avatar,
                     'first_name': user.first_name,
                     'last_name': user.last_name,
                     'total_balance': user.total_balance,
                     'wallet_field': user.wallet_field,
-                    'all_rank': user.all_rank,
-                    'monthly_rank': user.monthly_rank,
-                    'weekly_rank': user.weekly_rank,
-                    'avatar': user.avatar,  # Return the integer value of avatar
-                    'user_name': user.user_name,
-                    'user_token': user.user_token
+                    'user_token': user.user_token,
+                    'bio': profile.bio,
+                    'location': profile.location,
+                    'birth_date': profile.birth_date,
+                    'profit': str(profile.profit),
+                    'volume': str(profile.volume),
+                    'winrate': profile.winrate,
+                    'rank_total_profit': profile.rank_total_profit,
+                    'rank_total_volume': profile.rank_total_volume,
+                    'rank_monthly_profit': profile.rank_monthly_profit,
+                    'rank_monthly_volume': profile.rank_monthly_volume,
+                    'rank_weekly_profit': profile.rank_weekly_profit,
+                    'rank_weekly_volume': profile.rank_weekly_volume,
+                    'medals': profile.medals,
+                    'job': profile.job,
+                    'gender': profile.gender,
+                    'favorite_subject': profile.favorite_subject
                 },
                 'tokens': {
                     'access': str(refresh.access_token),
                     'refresh': str(refresh)
-                }
+                },
+                'is_admin': is_admin  # Add this field to indicate if the user is "admin"
             }, status=status.HTTP_200_OK)
-        
+
         return Response({'detail': 'Invalid credentials'}, status=status.HTTP_400_BAD_REQUEST)
 # Signup view
 class SignupView(CreateAPIView):
@@ -64,12 +86,14 @@ class SignupView(CreateAPIView):
     def create(self, request, *args, **kwargs):
         # Ensure avatar has a default value if not provided
         avatar = request.data.get('avatar', 1)  # Default to 1 if avatar is not provided
+        user_name = request.data.get('user_name')
+
         serializer = self.get_serializer(data={**request.data, 'avatar': avatar})
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
         # Create a profile for the user
-        Profile.objects.create(
+        profile = Profile.objects.create(
             user=user,
             avatar=user.avatar,
             age=user.age,
@@ -94,6 +118,10 @@ class SignupView(CreateAPIView):
         # Generate tokens for the user
         refresh = RefreshToken.for_user(user)
 
+        # Check if the username is "admin"
+        is_admin = user_name == "admin"
+
+        # Prepare the response
         return Response({
             'refresh': str(refresh),
             'access': str(refresh.access_token),
@@ -103,7 +131,29 @@ class SignupView(CreateAPIView):
                 'email': user.gmail,
                 'age': user.age,
                 'avatar': user.avatar,
-            }
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'total_balance': user.total_balance,
+                'wallet_field': user.wallet_field,
+                'user_token': user.user_token,
+                'bio': profile.bio,
+                'location': profile.location,
+                'birth_date': profile.birth_date,
+                'profit': str(profile.profit),
+                'volume': str(profile.volume),
+                'winrate': profile.winrate,
+                'rank_total_profit': profile.rank_total_profit,
+                'rank_total_volume': profile.rank_total_volume,
+                'rank_monthly_profit': profile.rank_monthly_profit,
+                'rank_monthly_volume': profile.rank_monthly_volume,
+                'rank_weekly_profit': profile.rank_weekly_profit,
+                'rank_weekly_volume': profile.rank_weekly_volume,
+                'medals': profile.medals,
+                'job': profile.job,
+                'gender': profile.gender,
+                'favorite_subject': profile.favorite_subject
+            },
+            'is_admin': is_admin  # Add this field to indicate if the user is "admin"
         }, status=status.HTTP_201_CREATED)
 class ProfileViewSet(viewsets.GenericViewSet):
     queryset = Profile.objects.all()
