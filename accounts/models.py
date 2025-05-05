@@ -16,10 +16,10 @@ class UserManager(BaseUserManager):
         
         user = self.model(
             user_name=user_name,
-            gmail=gmail,
+            gmail=self.normalize_email(gmail),
             **extra_fields
         )
-        user.set_password(password)
+        user.set_password(password)  # Hash the password
         user.save(using=self._db)
         return user
 
@@ -33,7 +33,6 @@ class UserManager(BaseUserManager):
             raise ValueError('Superuser must have is_superuser=True.')
         
         return self.create_user(user_name, gmail, password, **extra_fields)
-
 class User(AbstractBaseUser, PermissionsMixin):
     id = models.AutoField(primary_key=True)
     username = None  # Remove the username field
@@ -66,8 +65,8 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     objects = UserManager()
 
-    USERNAME_FIELD = 'user_name'
-    REQUIRED_FIELDS = ['gmail', 'password']
+    USERNAME_FIELD = 'gmail'
+    REQUIRED_FIELDS = ['user_name']
 
     def __str__(self):
         return self.user_name
@@ -237,8 +236,8 @@ class Profile(models.Model):
     rank_monthly_volume = models.IntegerField(default=0)
     rank_weekly_profit = models.IntegerField(default=0)
     rank_weekly_volume = models.IntegerField(default=0)
-    medals = models.JSONField(default=list)
-    avatar = models.PositiveIntegerField(choices=[(i, str(i)) for i in range(1, 10)], default=1)
+    medals = models.JSONField(default=list)  # Store a list of integers (1, 2, 3)
+    avatar = models.PositiveIntegerField(choices=[(i, str(i)) for i in range(1, 9)], default=1)  # Range updated to 1-8
     job = models.CharField(max_length=100, null=True, blank=True)
     gender = models.CharField(max_length=10, null=True, blank=True)
     age = models.IntegerField(null=True, blank=True)
@@ -253,31 +252,17 @@ class Profile(models.Model):
         self.rank_monthly_volume = max(0, self.rank_monthly_volume)
         self.rank_weekly_profit = max(0, self.rank_weekly_profit)
         self.rank_weekly_volume = max(0, self.rank_weekly_volume)
-        
-        # Ensure favorite_subject is always a string
-        if self.favorite_subject is None:
-            self.favorite_subject = 'Not specified'
-        elif not isinstance(self.favorite_subject, str):
-            self.favorite_subject = str(self.favorite_subject)
-        
-        super().save(*args, **kwargs)
 
-    def save(self, *args, **kwargs):
-        # Ensure all numeric fields are non-negative
-        self.winrate = max(0, min(100, self.winrate))
-        self.rank_total_profit = max(0, self.rank_total_profit)
-        self.rank_total_volume = max(0, self.rank_total_volume)
-        self.rank_monthly_profit = max(0, self.rank_monthly_profit)
-        self.rank_monthly_volume = max(0, self.rank_monthly_volume)
-        self.rank_weekly_profit = max(0, self.rank_weekly_profit)
-        self.rank_weekly_volume = max(0, self.rank_weekly_volume)
-        
         # Ensure favorite_subject is always a string
         if self.favorite_subject is None:
             self.favorite_subject = 'Not specified'
         elif not isinstance(self.favorite_subject, str):
             self.favorite_subject = str(self.favorite_subject)
-        
+
+        # Ensure medals only contain integers between 1 and 3
+        if not all(isinstance(medal, int) and 1 <= medal <= 3 for medal in self.medals):
+            raise ValueError("Medals must be a list of integers between 1 and 3.")
+
         super().save(*args, **kwargs)
 
     def __str__(self):

@@ -27,10 +27,10 @@ class LoginView(generics.GenericAPIView):
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.validated_data['user']
+        user = serializer.validated_data['user']  # Get the authenticated user
         
         if user is not None:
-            # Get JWT tokens
+            # Generate JWT tokens
             refresh = RefreshToken.for_user(user)
             
             return Response({
@@ -52,10 +52,9 @@ class LoginView(generics.GenericAPIView):
                     'access': str(refresh.access_token),
                     'refresh': str(refresh)
                 }
-            })
+            }, status=status.HTTP_200_OK)
         
         return Response({'detail': 'Invalid credentials'}, status=status.HTTP_400_BAD_REQUEST)
-
 # Signup view
 class SignupView(CreateAPIView):
     queryset = User.objects.all()
@@ -145,16 +144,16 @@ class ProfileViewSet(viewsets.GenericViewSet):
         if 'avatar' in request.data:
             try:
                 avatar_value = int(request.data['avatar'])
-                if 1 <= avatar_value <= 9:
+                if 1 <= avatar_value <= 8:
                     request.data['avatar'] = avatar_value
                 else:
                     return Response(
-                        {"avatar": ["Value must be between 1 and 9"]},
+                        {"avatar": ["Value must be between 1 and 8"]},
                         status=status.HTTP_400_BAD_REQUEST
                     )
             except (ValueError, TypeError):
                 return Response(
-                    {"avatar": ["Invalid value. Must be an integer between 1 and 9"]},
+                    {"avatar": ["Invalid value. Must be an integer between 1 and 8"]},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -241,6 +240,7 @@ class LeaderboardViewSet(viewsets.ViewSet):
 
                 # Create ranking entry
                 ranking_entry = {
+                    'id': user.id,  # Add the user's id here
                     'avatar': user.avatar if user.avatar else None,
                     'username': user.user_name,
                     'rank': rank,  # Use the rank from the loop
