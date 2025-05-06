@@ -155,6 +155,7 @@ class SignupView(CreateAPIView):
             },
             'is_admin': is_admin  # Add this field to indicate if the user is "admin"
         }, status=status.HTTP_201_CREATED)
+    
 class ProfileViewSet(viewsets.GenericViewSet):
     queryset = Profile.objects.all()
     serializer_class = ProfileSerializer
