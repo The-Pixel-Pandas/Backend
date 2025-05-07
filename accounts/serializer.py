@@ -7,24 +7,28 @@ from .utils import get_tokens_for_user
 User = get_user_model()
 
 
+from django.contrib.auth import authenticate
+from rest_framework import serializers
+from .models import User
+
 class LoginSerializer(serializers.Serializer):
-    user_name = serializers.CharField(required=True)
-    password = serializers.CharField(required=True)
+    gmail = serializers.EmailField(required=True)
+    password = serializers.CharField(write_only=True)
 
     def validate(self, data):
-        user = authenticate(
-            user_name=data['user_name'],
-            password=data['password']
-        )
+        gmail = data.get('gmail')
+        password = data.get('password')
+
+        if not gmail or not password:
+            raise serializers.ValidationError("Both 'gmail' and 'password' are required.")
+
+        # Authenticate the user
+        user = authenticate(username=gmail, password=password)
         if user is None:
-            raise serializers.ValidationError('Invalid credentials')
-        
-        if not user.is_active:
-            raise serializers.ValidationError('User account is disabled')
-        
+            raise serializers.ValidationError("Invalid credentials. Please try again.")
+
         data['user'] = user
         return data
-
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True)  # Required
     gmail = serializers.EmailField(
@@ -41,7 +45,7 @@ class UserSerializer(serializers.ModelSerializer):
     avatar = serializers.IntegerField(
         required=False,  # Optional
         min_value=1,
-        max_value=9,
+        max_value=8,
         default=1
     )
     total_balance = serializers.DecimalField(
@@ -249,20 +253,35 @@ class LeaderboardResponseSerializer(serializers.Serializer):
     def to_representation(self, instance):
         # Get the page number from context
         page = self.context.get('page', 1)
-        
+
+        # Add 'id' to each user in the leaderboard response
+        def add_user_id(data):
+            return [
+                {
+                    'id': user.get('id') or user.get('user_id'),  # Include user ID
+                    'avatar': user.get('avatar'),
+                    'username': user.get('username'),
+                    'rank': user.get('rank'),
+                    'profit': user.get('profit'),
+                    'volume': user.get('volume'),
+                    'token': user.get('token'),
+                }
+                for user in data
+            ]
+
         # Prepare the response
         return {
             'all_time': {
-                'volume': instance['all_time']['volume'],
-                'profit': instance['all_time']['profit']
+                'volume': add_user_id(instance['all_time']['volume']),
+                'profit': add_user_id(instance['all_time']['profit'])
             },
             'monthly': {
-                'volume': instance['monthly']['volume'],
-                'profit': instance['monthly']['profit']
+                'volume': add_user_id(instance['monthly']['volume']),
+                'profit': add_user_id(instance['monthly']['profit'])
             },
             'weekly': {
-                'volume': instance['weekly']['volume'],
-                'profit': instance['weekly']['profit']
+                'volume': add_user_id(instance['weekly']['volume']),
+                'profit': add_user_id(instance['weekly']['profit'])
             },
             'next': f"http://127.0.0.1:8000/api/leaderboards/?page={page + 1}" if page < 5 else None,
             'previous': f"http://127.0.0.1:8000/api/leaderboards/?page={page - 1}" if page > 1 else None
@@ -281,5 +300,4 @@ class LeaderboardResponseSerializer(serializers.Serializer):
         return None
 
     class Meta:
-        fields = ['current_node', 'next', 'previous']
-#github 
+        fields = ['current_node', 'next', 'previous']#github 
