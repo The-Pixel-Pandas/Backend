@@ -158,6 +158,18 @@ class Medal(models.Model):
         return self.name
 
 
+
+# TransactionHistory Model
+class TransactionHistory(models.Model):
+    transaction_id = models.AutoField(primary_key=True)
+    question = models.ForeignKey('Question', on_delete=models.CASCADE)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    time = models.TimeField()
+    date = models.DateField()
+    user = models.ForeignKey(User, on_delete=models.CASCADE, to_field='id')  # Referencing 'user_id'
+
+    def __str__(self):
+        return f"Transaction {self.transaction_id}"
 # Question Model
 class Question(models.Model):
     question_id = models.AutoField(primary_key=True)
