@@ -14,6 +14,12 @@ from django.db.models import Q
 from .models import User, Profile, Wallet, Leaderboard
 from .serializer import UserSerializer, ProfileSerializer, LoginSerializer, LeaderboardSerializer, LeaderboardResponseSerializer
 from .utils import get_tokens_for_user
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from .models import Wallet
+from .models import TransactionHistory
+from .serializer import TransactionHistorySerializer
 
 User = get_user_model()
 
@@ -332,3 +338,36 @@ class LeaderboardViewSet(viewsets.ViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save(user=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+
+class WalletView(APIView):
+    permission_classes = [IsAuthenticated]  # Ensures only authenticated users can access this view
+
+    def get(self, request, *args, **kwargs):
+        # Get the wallet for the authenticated user
+        try:
+            wallet = Wallet.objects.get(user_id_fk=request.user)  # Fetch the wallet linked to the user
+        except Wallet.DoesNotExist:
+            return Response({"detail": "Wallet not found."}, status=404)  # Handle case where wallet doesn't exist
+
+        # Example: Update total_balance dynamically (if needed)
+        wallet.total_balance += 10  # Example logic to update balance
+        wallet.save()
+
+        # Return the updated wallet data
+        return Response({
+            "user_id": wallet.user_id_fk.id,
+            "user_name": wallet.user_id_fk.user_name,
+            "total_balance": wallet.total_balance,
+            "volume": wallet.calculate_volume(),  # Call the method to calculate volume
+            "profit": wallet.calculate_profit()   # Call the method to calculate profit
+        })    
+
+class TransactionHistoryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        # Get the transaction history for the authenticated user
+        transactions = TransactionHistory.objects.filter(user=request.user)
+        serializer = TransactionHistorySerializer(transactions, many=True)
+        return Response(serializer.data)    

@@ -3,6 +3,9 @@ from django.contrib.auth import get_user_model, authenticate
 from rest_framework.validators import UniqueValidator
 from .models import Profile, Leaderboard
 from .utils import get_tokens_for_user
+from rest_framework import serializers
+from .models import Wallet
+from .models import TransactionHistory
 
 User = get_user_model()
 
@@ -301,3 +304,9 @@ class LeaderboardResponseSerializer(serializers.Serializer):
 
     class Meta:
         fields = ['current_node', 'next', 'previous']#github 
+
+
+class TransactionHistorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TransactionHistory
+        fields = ['transaction_id', 'question', 'amount', 'time', 'date', 'user']
