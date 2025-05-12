@@ -6,6 +6,10 @@ from .utils import get_tokens_for_user
 from rest_framework import serializers
 from .models import Wallet
 from .models import TransactionHistory
+from .models import Question, Option, Bet
+from .models import Question
+from .models import Option
+from .models import Profile
 
 User = get_user_model()
 
@@ -52,7 +56,7 @@ class UserSerializer(serializers.ModelSerializer):
         default=1
     )
     total_balance = serializers.DecimalField(
-        max_digits=10, decimal_places=2, required=False, default=0.00
+        max_digits=10, decimal_places=2, required=False, default=10000
     )  # Optional
     all_rank = serializers.IntegerField(required=False, default=0)  # Optional
     monthly_rank = serializers.IntegerField(required=False, default=0)  # Optional
@@ -148,6 +152,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     gender = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     age = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     favorite_subject = serializers.CharField(required=False, allow_null=True, allow_blank=True, default='Not specified')
+    total_balance = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)  # Added total_balance
 
     def validate_favorite_subject(self, value):
         if value is None:
@@ -156,9 +161,11 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         # Ensure all numeric fields are non-negative
-        for field in ['winrate', 'rank_total_profit', 'rank_total_volume',
-                     'rank_monthly_profit', 'rank_monthly_volume',
-                     'rank_weekly_profit', 'rank_weekly_volume', 'age']:
+        for field in [
+            'profit', 'volume', 'winrate', 'rank_total_profit', 'rank_total_volume',
+            'rank_monthly_profit', 'rank_monthly_volume', 'rank_weekly_profit',
+            'rank_weekly_volume', 'age'
+        ]:
             if field in data and data[field] is not None and data[field] < 0:
                 raise serializers.ValidationError({field: 'Must be non-negative'})
         
@@ -171,12 +178,6 @@ class ProfileSerializer(serializers.ModelSerializer):
         for field in ['bio', 'location', 'job', 'gender', 'favorite_subject']:
             if field in data and data[field] is not None:
                 data[field] = str(data[field])
-        
-        # Convert decimal fields to strings
-        if 'profit' in data and data['profit'] is not None:
-            data['profit'] = str(data['profit'])
-        if 'volume' in data and data['volume'] is not None:
-            data['volume'] = str(data['volume'])
         
         # Handle medals
         if 'medals' in data and data['medals'] is not None:
@@ -195,9 +196,9 @@ class ProfileSerializer(serializers.ModelSerializer):
             'profit', 'volume', 'winrate', 'rank_total_profit', 'rank_total_volume',
             'rank_monthly_profit', 'rank_monthly_volume', 'rank_weekly_profit',
             'rank_weekly_volume', 'medals', 'avatar', 'job', 'gender', 'age',
-            'favorite_subject'
+            'favorite_subject', 'total_balance'  # Included total_balance
         ]
-        read_only_fields = ['created_at', 'updated_at']
+        read_only_fields = ['user_id', 'user_name', 'email', 'total_balance']  # Mark total_balance as read-only
 
     def update(self, instance, validated_data):
         """
@@ -223,10 +224,12 @@ class ProfileSerializer(serializers.ModelSerializer):
         instance.gender = validated_data.get('gender', instance.gender)
         instance.age = validated_data.get('age', instance.age)
         instance.favorite_subject = validated_data.get('favorite_subject', instance.favorite_subject)
+        instance.total_balance = validated_data.get('total_balance', instance.total_balance)  # Added total_balance
 
         # Save the updated instance
         instance.save()
         return instance
+    
 
 class LeaderboardSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.user_name', read_only=True)
@@ -310,3 +313,28 @@ class TransactionHistorySerializer(serializers.ModelSerializer):
     class Meta:
         model = TransactionHistory
         fields = ['transaction_id', 'question', 'amount', 'time', 'date', 'user']
+
+class QuestionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Question
+        fields = [
+            'question_id',
+            'question_description',
+            'question_topic',
+            'question_type',
+            'question_tag',
+            'question_volume',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['question_id', 'created_at', 'updated_at']
+class BetSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Bet
+        fields = ['user', 'amount']        
+
+class OptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Option
+        fields = ['option_id', 'question', 'description', 'total_balance']
+        read_only_fields = ['option_id', 'question', 'total_balance']  # Make 'question' and 'total_balance' read-only
