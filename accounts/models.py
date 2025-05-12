@@ -9,6 +9,7 @@ from django.db.models import Case, When, Value, IntegerField
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from decimal import Decimal
+from django.utils.timezone import now
 
 class UserManager(BaseUserManager):
     def create_user(self, user_name, gmail, password=None, **extra_fields):
@@ -181,12 +182,13 @@ class Question(models.Model):
     question_chance_yes = models.DecimalField(max_digits=5, decimal_places=2)
     question_chance_no = models.DecimalField(max_digits=5, decimal_places=2)
     question_token = models.CharField(max_length=255, blank=True, null=True)
-    question_token = models.CharField(max_length=255, blank=True, null=True)
+    prize = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    image = models.ImageField(upload_to='question_images/', blank=True, null=True)
+    created_at = models.DateTimeField(default=now)  # Use only default=now
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.question_topic
-
-
 # News Model
 class News(models.Model):
     news_id = models.AutoField(primary_key=True)
@@ -281,3 +283,4 @@ def create_wallet(sender, instance, created, **kwargs):
     if created:  # Check if the user is newly created
         Wallet.objects.create(user_id_fk=instance)    
     
+#sl    
