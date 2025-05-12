@@ -6,6 +6,9 @@ from django.db.models import Count, Sum
 from django.db.models.functions import Coalesce
 from django.db.models import F, ExpressionWrapper, DecimalField
 from django.db.models import Case, When, Value, IntegerField
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from decimal import Decimal
 
 class UserManager(BaseUserManager):
     def create_user(self, user_name, gmail, password=None, **extra_fields):
@@ -33,6 +36,7 @@ class UserManager(BaseUserManager):
             raise ValueError('Superuser must have is_superuser=True.')
         
         return self.create_user(user_name, gmail, password, **extra_fields)
+    
 class User(AbstractBaseUser, PermissionsMixin):
     id = models.AutoField(primary_key=True)
     username = None  # Remove the username field
@@ -155,8 +159,6 @@ class Medal(models.Model):
 
 
 
-
-
 # TransactionHistory Model
 class TransactionHistory(models.Model):
     transaction_id = models.AutoField(primary_key=True)
@@ -168,8 +170,6 @@ class TransactionHistory(models.Model):
 
     def __str__(self):
         return f"Transaction {self.transaction_id}"
-
-
 # Question Model
 class Question(models.Model):
     question_id = models.AutoField(primary_key=True)
@@ -218,9 +218,16 @@ class Wallet(models.Model):
     total_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     user_id_fk = models.OneToOneField(User, on_delete=models.CASCADE, related_name="wallet")
 
+    def calculate_volume(self):
+        # Example logic for volume calculation
+        return self.total_balance * 2  # Replace with your actual logic
+
+    def calculate_profit(self):
+        # Example logic for profit calculation
+        return self.total_balance * Decimal('0.1')  # Replace with your actual logic
+
     def __str__(self):
         return f"Wallet of {self.user_id_fk.user_name}"
-
 
 class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile', primary_key=True)
@@ -267,3 +274,10 @@ class Profile(models.Model):
 
     def __str__(self):
         return f"{self.user.user_name}'s Profile"
+    
+
+@receiver(post_save, sender=User)
+def create_wallet(sender, instance, created, **kwargs):
+    if created:  # Check if the user is newly created
+        Wallet.objects.create(user_id_fk=instance)    
+    
