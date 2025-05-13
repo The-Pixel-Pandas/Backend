@@ -29,6 +29,27 @@ from django.shortcuts import get_object_or_404
 from .models import Option, Question
 from .serializer import OptionSerializer
 from .models import SiteBalance
+from rest_framework import generics
+from .models import Option
+from .serializer import OptionSerializer
+from rest_framework import generics
+from .models import Option, Question
+from .serializer import OptionSerializer
+from rest_framework import generics, status
+from rest_framework.response import Response
+from .models import Option, Question, User, SiteBalance
+from .serializer import OptionSerializer
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .models import SiteBalance
+from .serializer import SiteBalanceSerializer
+from decimal import Decimal
+from rest_framework import generics, status
+from rest_framework.response import Response
+from .models import Option, Question, User
+from .serializer import OptionSerializer
+from decimal import Decimal
 
 
 User = get_user_model()
@@ -466,28 +487,92 @@ class EndQuestionView(APIView):
 
         return Response({"message": "Question resolved and rewards distributed."}, status=status.HTTP_200_OK)
     
-    from rest_framework.generics import ListCreateAPIView
-from .models import Option, Question
-from .serializer import OptionSerializer
 
-class OptionListCreateView(ListCreateAPIView):
-    """
-    List all options for a question or create a new option.
-    """
+
+class OptionListCreateView(generics.ListCreateAPIView):
     serializer_class = OptionSerializer
 
     def get_queryset(self):
         question_id = self.kwargs['question_id']
-        return Option.objects.filter(question_id=question_id)
+        return Option.objects.filter(question__question_id=question_id)
 
     def perform_create(self, serializer):
+        # Get 'question_id' from the URL
         question_id = self.kwargs['question_id']
-        question = Question.objects.get(pk=question_id)
-        serializer.save(question=question)
+        question = Question.objects.get(question_id=question_id)
+
+        # Get volume from request data and validate
+        # volume = self.request.data.get('volume')
+        volume = question.question_volume
+
+        if not volume or float(volume) <= 0:
+            return Response({"error": "Invalid volume."}, status=status.HTTP_400_BAD_REQUEST)
+
+        volume = Decimal(volume)
+
+        user = self.request.user
+
+        if user.total_balance < volume:
+            return Response({"error": "Insufficient balance."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Deduct volume from the user's total balance
+        user.total_balance -= volume
+        user.save()
+
+        # Add volume to the question's total volume
+        question.question_volume += volume
+        question.save()
+
+        # Create the option and associate with the question
+        option = serializer.save(question=question)
+
+        # Optionally, add the volume to the option's total balance
+        option.total_balance += float(volume)
+        option.save()
+
+        # Return the created option data
+        return Response(OptionSerializer(option).data, status=status.HTTP_201_CREATED)
+    
+class OptionListView(generics.ListAPIView):
+    """
+    View to list all options for a specific question.
+    """
+    serializer_class = OptionSerializer
+
+    def get_queryset(self):
+        """
+        Optionally filter the options by the question ID passed in the URL.
+        """
+        question_id = self.kwargs['question_id']
+        return Option.objects.filter(question_id=question_id)  
+
 
 class SiteBalanceView(APIView):
-    def get(self, request, *args, **kwargs):
+    """
+    View to handle the site's balance.
+    """
+    def get(self, request):
+        # Get the first (or only) SiteBalance object
         site_balance = SiteBalance.objects.first()
-        if site_balance:
-            return Response({"balance": site_balance.balance}, status=200)
-        return Response({"error": "Site balance is not initialized."}, status=404)        
+        if not site_balance:
+            return Response({"error": "Site balance not initialized"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Serialize and return the site balance
+        serializer = SiteBalanceSerializer(site_balance)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        # Update or create site balance
+        balance_data = request.data.get("balance")
+        if balance_data is None:
+            return Response({"error": "Balance value is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        site_balance, created = SiteBalance.objects.get_or_create(
+            defaults={'balance': balance_data}  # Initialize with balance if it doesn't exist
+        )
+
+        if not created:
+            site_balance.balance = balance_data
+            site_balance.save()
+
+        return Response({"message": "Site balance updated successfully"}, status=status.HTTP_200_OK)

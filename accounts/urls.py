@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     LoginView, SignupView, ProfileViewSet, LeaderboardViewSet, get_csrf_token,
     WalletView, TransactionHistoryView, ResolveQuestionView, PlaceBetView,
-    QuestionCreateView, OptionListCreateView
+    QuestionCreateView, OptionListCreateView, OptionListView
 )
 from .views import SiteBalanceView
 
@@ -36,7 +36,8 @@ urlpatterns = [
     path('questions/<int:pk>/resolve/', ResolveQuestionView.as_view(), name='resolve-question'),
 
     # Option-related endpoints
-    path('questions/<int:question_id>/options/', OptionListCreateView.as_view(), name='option-list-create'),
+    path('questions/<int:question_id>/options/', OptionListView.as_view(), name='option-list'),  # For listing options (GET)
+    path('questions/<int:question_id>/options/create/', OptionListCreateView.as_view(), name='option-list-create'),  # For creating options (POST)
 
     # Bet-related endpoints
     path('options/<int:pk>/bets/', PlaceBetView.as_view(), name='place-bet'),
