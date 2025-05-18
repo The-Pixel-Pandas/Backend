@@ -363,32 +363,13 @@ class TransactionHistorySerializer(serializers.ModelSerializer):
         model = TransactionHistory
         fields = ['transaction_id', 'question', 'amount', 'time', 'date', 'user']
 
-class QuestionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Question
-        fields = [
-            'question_id',
-            'question_description',
-            'question_topic',
-            'question_type',
-            'question_tag',
-            'question_volume',
-            'created_at',
-            'updated_at',
-        ]
-        read_only_fields = ['question_id', 'created_at', 'updated_at']
-class BetSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Bet
-        fields = ['user', 'amount']        
-
 class OptionSerializer(serializers.ModelSerializer):
     question_id = serializers.IntegerField(source='question.question_id', read_only=True)
 
     class Meta:
         model = Option
-        fields = ['option_id', 'description', 'total_balance', 'chance', 'question_id']
-        read_only_fields = ['option_id', 'question_id', 'total_balance']
+        fields = ['option_id', 'description', 'option_volume', 'chance', 'question_id']
+        read_only_fields = ['option_id', 'question_id', 'option_volume']
 
     def create(self, validated_data):
         # Get 'question_id' from the URL and associate with the option
@@ -402,7 +383,49 @@ class OptionSerializer(serializers.ModelSerializer):
         option = Option.objects.create(question=question, **validated_data)  # Create and save the option
         return option
 
-    
+class QuestionSerializer(serializers.ModelSerializer):
+    options = OptionSerializer(many=True, read_only=True)
+    winning_option = OptionSerializer(read_only=True)
+
+    class Meta:
+        model = Question
+        fields = [
+            'question_id',
+            'question_description',
+            'question_topic',
+            'question_type',
+            'question_tag',
+            'question_volume',
+            'created_at',
+            'updated_at',
+            'end_time',
+            'is_active',
+            'options',
+            'winning_option'
+        ]
+        read_only_fields = ['question_id', 'created_at', 'updated_at', 'question_volume', 'options', 'winning_option']
+
+    def create(self, validated_data):
+        # Create the question
+        question = Question.objects.create(**validated_data)
+        
+        # Initialize options (Yes and No)
+        question.initialize_options()
+        
+        return question
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        # Add options to the representation, ensuring only unique options are shown
+        options = instance.options.all().order_by('option_id')
+        representation['options'] = OptionSerializer(options, many=True).data
+        return representation
+
+class BetSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Bet
+        fields = ['user', 'amount']        
+
 class SiteBalanceSerializer(serializers.ModelSerializer):
     class Meta:
         model = SiteBalance

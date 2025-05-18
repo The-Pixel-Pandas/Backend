@@ -444,35 +444,75 @@ class ResolveQuestionView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class PlaceBetView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request, pk, *args, **kwargs):
-        option = Option.objects.get(pk=pk)
-        user = request.user
-        amount = request.data.get('amount')
+        try:
+            option = Option.objects.get(pk=pk)
+            user = request.user
+            amount = Decimal(request.data.get('amount', 0))
 
-        # Validate the bet amount
-        if int(amount) % 100 != 0 or int(amount) < 100 or int(amount) > 10000:
-            return Response({"error": "Amount must be a multiple of 100 between 100 and 10,000."}, status=status.HTTP_400_BAD_REQUEST)
+            # Validate the bet amount
+            if amount % 100 != 0 or amount < 100 or amount > 10000:
+                return Response(
+                    {"error": "Amount must be a multiple of 100 between 100 and 10,000."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-        # Check user's balance
-        if user.wallet.total_balance < float(amount):
-            return Response({"error": "Insufficient balance."}, status=status.HTTP_400_BAD_REQUEST)
+            # Check if question is active
+            if not option.question.is_active:
+                return Response(
+                    {"error": "This question is no longer active for betting."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-        # Deduct from user's balance and add to the option's total_balance
-        user.wallet.total_balance -= float(amount)
-        user.wallet.save()
+            # Check user's balance
+            if user.total_balance < amount:
+                return Response(
+                    {"error": "Insufficient balance."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-        option.total_balance += float(amount)  # Update total_balance instead of balance
-        option.save()
+            # Create the bet
+            bet = Bet.objects.create(
+                user=user,
+                option=option,
+                amount=amount
+            )
 
-        # Update the question's volume and recalculate chances
-        question = option.question
-        question.question_volume += float(amount)
-        question.save()
+            # Deduct from user's balance
+            user.total_balance -= amount
+            user.save()
 
-        for opt in question.options.all():
-            opt.update_chance(question.question_volume)
+            # Update option volume and question volume
+            option.update_option_volume(amount)
 
-        return Response({"message": "Bet placed successfully."}, status=status.HTTP_200_OK)
+            # Update chances for all options
+            for opt in option.question.options.all():
+                opt.update_chance(option.question.question_volume)
+
+            return Response({
+                "message": "Bet placed successfully.",
+                "bet_id": bet.bet_id,
+                "amount": amount,
+                "option": option.description,
+                "question": option.question.question_topic,
+                "remaining_balance": user.total_balance,
+                "option_volume": option.option_volume,
+                "question_volume": option.question.question_volume
+            }, status=status.HTTP_200_OK)
+
+        except Option.DoesNotExist:
+            return Response(
+                {"error": "Option not found."}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
 class EndQuestionView(APIView):
     def post(self, request, pk, *args, **kwargs):
         question = Question.objects.get(pk=pk)
@@ -502,7 +542,6 @@ class OptionListCreateView(generics.ListCreateAPIView):
         question = Question.objects.get(question_id=question_id)
 
         # Get volume from request data and validate
-        # volume = self.request.data.get('volume')
         volume = question.question_volume
 
         if not volume or float(volume) <= 0:
@@ -526,8 +565,8 @@ class OptionListCreateView(generics.ListCreateAPIView):
         # Create the option and associate with the question
         option = serializer.save(question=question)
 
-        # Optionally, add the volume to the option's total balance
-        option.total_balance += float(volume)
+        # Add the volume to the option's volume
+        option.option_volume = volume
         option.save()
 
         # Return the created option data

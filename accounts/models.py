@@ -187,78 +187,100 @@ class Question(models.Model):
     question_topic = models.CharField(max_length=100)
     question_type = models.CharField(max_length=50)
     question_tag = models.CharField(max_length=50)
-    question_volume = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))  # Total volume of bets
+    question_volume = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))  # Sum of all option volumes
     created_at = models.DateTimeField(default=now)
     updated_at = models.DateTimeField(auto_now=True)
-    end_time = models.DateTimeField(default=now)  # End time for the question
-    is_active = models.BooleanField(default=True)  # Status of the question (active or not)
+    end_time = models.DateTimeField(default=now)
+    is_active = models.BooleanField(default=True)
+    winning_option = models.ForeignKey('Option', on_delete=models.SET_NULL, null=True, blank=True, related_name='winning_questions')
 
     def __str__(self):
         return self.question_topic
 
+    def update_question_volume(self):
+        """
+        Update question volume to be the sum of all option volumes
+        """
+        total_volume = sum(option.option_volume for option in self.options.all())
+        self.question_volume = total_volume
+        self.save()
+
     def initialize_options(self):
         """
-        Initialize options with 10 coins from the site's balance and update question volume.
+        Initialize only Yes and No options for the question.
         """
+        # Check if options already exist
+        if self.options.exists():
+            return
+
         site_balance = SiteBalance.objects.first()
         if not site_balance:
             raise ValueError("Site balance is not initialized.")
 
-        # Create "Yes" and "No" options for the question
-        yes_option = Option.objects.create(question=self, description="Yes", total_balance=Decimal('10.00'))
-        no_option = Option.objects.create(question=self, description="No", total_balance=Decimal('10.00'))
+        # Create only "Yes" and "No" options
+        yes_option = Option.objects.create(question=self, description="Yes", option_volume=Decimal('10.00'))
+        no_option = Option.objects.create(question=self, description="No", option_volume=Decimal('10.00'))
 
         # Deduct 10 coins for each option from the site's balance
         site_balance.deduct(Decimal('10.00'))
         site_balance.deduct(Decimal('10.00'))
 
-        # Update the question volume (add 20 to account for both options)
-        self.question_volume += Decimal('20.00')  # 10 coins for each option
-        self.save()
-
+        # Update the question volume
+        self.update_question_volume()
 
     def validate_question(self):
-            """
-            Validate the question at the end of its duration.
-            If any option has less than 1,000 coins, invalidate the question and refund users.
-            """
-            for option in self.options.all():
-                if option.total_bet < 1000.00:
-                    self.invalidate_question()
-                    return False
-            return True
+        """
+        Validate the question at the end of its duration.
+        If any option has less than 1,000 coins, invalidate the question and refund users.
+        """
+        for option in self.options.all():
+            if option.option_volume < 1000.00:
+                self.invalidate_question()
+                return False
+        return True
 
     def invalidate_question(self):
-            """
-            Invalidate the question and refund all users.
-            """
-            for option in self.options.all():
-                for bet in option.bets.all():
-                    bet.user.wallet.total_balance += bet.amount  # Refund the user's bet
-                    bet.user.wallet.save()
-            self.is_active = False
-            self.save()
+        """
+        Invalidate the question and refund all users.
+        """
+        for option in self.options.all():
+            for bet in option.bets.all():
+                bet.user.total_balance += bet.amount  # Refund the user's bet
+                bet.user.save()
+        self.is_active = False
+        self.save()
 
     def resolve_question(self, winning_option_id):
         """
         Resolve the question by distributing winnings to users who bet on the winning option.
+        The total volume of the losing option is distributed among winners based on their share.
         """
         if not self.validate_question():
             return
 
         winning_option = self.options.get(pk=winning_option_id)
-        total_bet_all_options = sum(option.total_balance for option in self.options.all())
-        site_balance = SiteBalance.objects.first()
-
+        self.winning_option = winning_option
+        
+        # Get the losing option
+        losing_option = self.options.exclude(pk=winning_option_id).first()
+        
+        # Calculate total volume of losing option
+        losing_volume = losing_option.option_volume
+        
+        # Calculate total volume of winning option
+        winning_volume = winning_option.option_volume
+        
         # Distribute winnings to users who bet on the winning option
         for bet in winning_option.bets.all():
-            user_share = bet.amount / winning_option.total_balance  # User's share of the total bet on the winning option
-            winnings = user_share * total_bet_all_options * Decimal('0.95')  # Deduct 5% for the site
-            bet.user.wallet.total_balance += winnings
-            bet.user.wallet.save()
-
-        # Add 5% of the total bets to the site's balance
-        site_balance.add(total_bet_all_options * Decimal('0.05'))
+            # Calculate user's share of the winning option
+            user_share = bet.amount / winning_volume
+            
+            # Calculate winnings (user's share of the losing option's volume)
+            winnings = user_share * losing_volume
+            
+            # Add winnings to user's balance
+            bet.user.total_balance += winnings
+            bet.user.save()
 
         # Mark the question as resolved
         self.is_active = False
@@ -268,7 +290,7 @@ class Option(models.Model):
     option_id = models.AutoField(primary_key=True)
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="options")
     description = models.CharField(max_length=255)
-    total_balance = models.DecimalField(max_digits=10, decimal_places=2, default=10000.00)  # Use total_balance instead of balance
+    option_volume = models.DecimalField(max_digits=10, decimal_places=2, default=10.00)  # Sum of all bets on this option
     chance = models.DecimalField(max_digits=5, decimal_places=2, default=50.00)  # Chance percentage
 
     def update_chance(self, total_volume):
@@ -276,10 +298,20 @@ class Option(models.Model):
         Update the chance percentage based on the total volume of bets.
         """
         if total_volume > 0:
-            self.chance = (self.total_balance / total_volume) * 100
+            self.chance = (self.option_volume / total_volume) * 100
         else:
             self.chance = 50.00  # Default to 50% if no bets
         self.save()
+
+    def update_option_volume(self, amount):
+        """
+        Update option volume by adding the bet amount
+        """
+        self.option_volume += amount
+        self.save()
+        # Update question volume
+        self.question.update_question_volume()
+
 # Bet Model  
 class Bet(models.Model):
     bet_id = models.AutoField(primary_key=True)
