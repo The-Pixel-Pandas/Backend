@@ -11,8 +11,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.generics import CreateAPIView
 from django.db.models import Q
-from .models import User, Profile, Wallet, Leaderboard
-from .serializer import UserSerializer, ProfileSerializer, LoginSerializer, LeaderboardSerializer, LeaderboardResponseSerializer
+from .models import User, Profile, Wallet, Leaderboard, Task
+from .serializer import UserSerializer, ProfileSerializer, LoginSerializer, LeaderboardSerializer, LeaderboardResponseSerializer, TaskSerializer, TaskCompletionSerializer
 from .utils import get_tokens_for_user
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -615,3 +615,48 @@ class SiteBalanceView(APIView):
             site_balance.save()
 
         return Response({"message": "Site balance updated successfully"}, status=status.HTTP_200_OK)
+
+class TaskViewSet(viewsets.ModelViewSet):
+    queryset = Task.objects.all()
+    serializer_class = TaskSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Task.objects.none()
+        return Task.objects.all()
+
+    @action(detail=False, methods=['post'])
+    def complete_task(self, request):
+        """
+        Mark a task as completed and add the amount to user's total balance
+        """
+        serializer = TaskCompletionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        task_id = serializer.validated_data['task_id']
+        try:
+            task = Task.objects.get(task_id=task_id)
+        except Task.DoesNotExist:
+            return Response(
+                {"detail": "Task not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if task.is_completed:
+            return Response(
+                {"detail": "Task is already completed."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if task.complete_task(request.user):
+            return Response({
+                "detail": "Task completed successfully.",
+                "amount_added": task.amount,
+                "new_balance": request.user.total_balance
+            }, status=status.HTTP_200_OK)
+        
+        return Response(
+            {"detail": "Failed to complete task."},
+            status=status.HTTP_400_BAD_REQUEST
+        )

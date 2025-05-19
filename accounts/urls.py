@@ -3,13 +3,14 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     LoginView, SignupView, ProfileViewSet, LeaderboardViewSet, get_csrf_token,
     WalletView, TransactionHistoryView, ResolveQuestionView, PlaceBetView,
-    QuestionCreateView, OptionListCreateView, OptionListView
+    QuestionCreateView, OptionListCreateView, OptionListView, TaskViewSet
 )
 from .views import SiteBalanceView
 
 router = DefaultRouter()
 router.register(r'profiles', ProfileViewSet, basename='profile')
 router.register(r'leaderboards', LeaderboardViewSet, basename='leaderboard')
+router.register(r'tasks', TaskViewSet, basename='task')
 
 urlpatterns = [
     # Include the router URLs directly

@@ -215,7 +215,8 @@ class Question(models.Model):
 
         site_balance = SiteBalance.objects.first()
         if not site_balance:
-            raise ValueError("Site balance is not initialized.")
+            # Create a new site balance if it doesn't exist
+            site_balance = SiteBalance.objects.create(balance=Decimal('1000000.00'))
 
         # Create only "Yes" and "No" options
         yes_option = Option.objects.create(question=self, description="Yes", option_volume=Decimal('10.00'))
@@ -435,4 +436,34 @@ class SiteBalance(models.Model):
 def initialize_question_options(sender, instance, created, **kwargs):
     if created:  # Only initialize options if the Question is newly created
         instance.initialize_options()
+      
+class Task(models.Model):
+    task_id = models.AutoField(primary_key=True)
+    title = models.CharField(max_length=200)
+    description = models.TextField()
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_completed = models.BooleanField(default=False)
+    completed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='completed_tasks')
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return self.title
+
+    def complete_task(self, user):
+        """
+        Mark a task as completed and add the amount to user's total balance
+        """
+        if not self.is_completed:
+            self.is_completed = True
+            self.completed_by = user
+            self.completed_at = timezone.now()
+            self.save()
+
+            # Add the task amount to user's total balance
+            user.total_balance += self.amount
+            user.save()
+
+            return True
+        return False
       

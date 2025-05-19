@@ -12,6 +12,7 @@ from .models import Option
 from .models import Profile
 from rest_framework import serializers
 from .models import SiteBalance
+from .models import Task
 
 User = get_user_model()
 
@@ -430,3 +431,12 @@ class SiteBalanceSerializer(serializers.ModelSerializer):
     class Meta:
         model = SiteBalance
         fields = ['balance']    
+
+class TaskSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Task
+        fields = ['task_id', 'title', 'description', 'amount', 'created_at', 'is_completed', 'completed_by', 'completed_at']
+        read_only_fields = ['task_id', 'created_at', 'is_completed', 'completed_by', 'completed_at']
+
+class TaskCompletionSerializer(serializers.Serializer):
+    task_id = serializers.IntegerField()    
