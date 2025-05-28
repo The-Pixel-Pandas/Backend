@@ -11,8 +11,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.generics import CreateAPIView
 from django.db.models import Q
-from .models import User, Profile, Wallet, Leaderboard
-from .serializer import UserSerializer, ProfileSerializer, LoginSerializer, LeaderboardSerializer, LeaderboardResponseSerializer
+from .models import User, Profile, Wallet, Leaderboard, Task
+from .serializer import UserSerializer, ProfileSerializer, LoginSerializer, LeaderboardSerializer, LeaderboardResponseSerializer, TaskSerializer, TaskCompletionSerializer
 from .utils import get_tokens_for_user
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -20,6 +20,37 @@ from rest_framework.permissions import IsAuthenticated
 from .models import Wallet
 from .models import TransactionHistory
 from .serializer import TransactionHistorySerializer
+from .models import Question
+from .serializer import QuestionSerializer
+from .models import Question, Option, Bet
+from .serializer import QuestionSerializer, BetSerializer
+from rest_framework.generics import ListCreateAPIView
+from django.shortcuts import get_object_or_404
+from .models import Option, Question
+from .serializer import OptionSerializer
+from .models import SiteBalance
+from rest_framework import generics
+from .models import Option
+from .serializer import OptionSerializer
+from rest_framework import generics
+from .models import Option, Question
+from .serializer import OptionSerializer
+from rest_framework import generics, status
+from rest_framework.response import Response
+from .models import Option, Question, User, SiteBalance
+from .serializer import OptionSerializer
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .models import SiteBalance
+from .serializer import SiteBalanceSerializer
+from decimal import Decimal
+from rest_framework import generics, status
+from rest_framework.response import Response
+from .models import Option, Question, User
+from .serializer import OptionSerializer
+from decimal import Decimal
+
 
 User = get_user_model()
 
@@ -371,3 +402,261 @@ class TransactionHistoryView(APIView):
         transactions = TransactionHistory.objects.filter(user=request.user)
         serializer = TransactionHistorySerializer(transactions, many=True)
         return Response(serializer.data)    
+class QuestionCreateView(CreateAPIView):
+    """
+    API endpoint to create a new question.
+    """
+    queryset = Question.objects.all()
+    serializer_class = QuestionSerializer
+
+class QuestionListView(APIView):
+    """
+    List all questions or create a new question.
+    """
+    def get(self, request):
+        questions = Question.objects.all()
+        serializer = QuestionSerializer(questions, many=True)
+        return Response(serializer.data)
+
+class QuestionDetailView(APIView):
+    """
+    Retrieve a specific question.
+    """
+    def get(self, request, pk):
+        question = get_object_or_404(Question, pk=pk)
+        serializer = QuestionSerializer(question)
+        return Response(serializer.data)
+
+class ResolveQuestionView(APIView):
+    """
+    Resolve a question and distribute winnings.
+    """
+    def post(self, request, pk):
+        question = get_object_or_404(Question, pk=pk)
+        winning_option_id = request.data.get('winning_option_id')
+        if not winning_option_id:
+            return Response({"error": "Winning option ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            question.resolve_question(winning_option_id)
+            return Response({"message": "Question resolved successfully."}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class PlaceBetView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk, *args, **kwargs):
+        try:
+            option = Option.objects.get(pk=pk)
+            user = request.user
+            amount = Decimal(request.data.get('amount', 0))
+
+            # Validate the bet amount
+            if amount % 100 != 0 or amount < 100 or amount > 10000:
+                return Response(
+                    {"error": "Amount must be a multiple of 100 between 100 and 10,000."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Check if question is active
+            if not option.question.is_active:
+                return Response(
+                    {"error": "This question is no longer active for betting."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Check user's balance
+            if user.total_balance < amount:
+                return Response(
+                    {"error": "Insufficient balance."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Create the bet
+            bet = Bet.objects.create(
+                user=user,
+                option=option,
+                amount=amount
+            )
+
+            # Deduct from user's balance
+            user.total_balance -= amount
+            user.save()
+
+            # Update option volume and question volume
+            option.update_option_volume(amount)
+
+            # Update chances for all options
+            for opt in option.question.options.all():
+                opt.update_chance(option.question.question_volume)
+
+            return Response({
+                "message": "Bet placed successfully.",
+                "bet_id": bet.bet_id,
+                "amount": amount,
+                "option": option.description,
+                "question": option.question.question_topic,
+                "remaining_balance": user.total_balance,
+                "option_volume": option.option_volume,
+                "question_volume": option.question.question_volume
+            }, status=status.HTTP_200_OK)
+
+        except Option.DoesNotExist:
+            return Response(
+                {"error": "Option not found."}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+class EndQuestionView(APIView):
+    def post(self, request, pk, *args, **kwargs):
+        question = Question.objects.get(pk=pk)
+
+        # Validate the question
+        if not question.validate_question():
+            return Response({"message": "Question invalidated due to insufficient bets."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Resolve the question
+        winning_option_id = request.data.get('winning_option_id')
+        question.resolve_question(winning_option_id)
+
+        return Response({"message": "Question resolved and rewards distributed."}, status=status.HTTP_200_OK)
+    
+
+
+class OptionListCreateView(generics.ListCreateAPIView):
+    serializer_class = OptionSerializer
+
+    def get_queryset(self):
+        question_id = self.kwargs['question_id']
+        return Option.objects.filter(question__question_id=question_id)
+
+    def perform_create(self, serializer):
+        # Get 'question_id' from the URL
+        question_id = self.kwargs['question_id']
+        question = Question.objects.get(question_id=question_id)
+
+        # Get volume from request data and validate
+        volume = question.question_volume
+
+        if not volume or float(volume) <= 0:
+            return Response({"error": "Invalid volume."}, status=status.HTTP_400_BAD_REQUEST)
+
+        volume = Decimal(volume)
+
+        user = self.request.user
+
+        if user.total_balance < volume:
+            return Response({"error": "Insufficient balance."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Deduct volume from the user's total balance
+        user.total_balance -= volume
+        user.save()
+
+        # Add volume to the question's total volume
+        question.question_volume += volume
+        question.save()
+
+        # Create the option and associate with the question
+        option = serializer.save(question=question)
+
+        # Add the volume to the option's volume
+        option.option_volume = volume
+        option.save()
+
+        # Return the created option data
+        return Response(OptionSerializer(option).data, status=status.HTTP_201_CREATED)
+    
+class OptionListView(generics.ListAPIView):
+    """
+    View to list all options for a specific question.
+    """
+    serializer_class = OptionSerializer
+
+    def get_queryset(self):
+        """
+        Optionally filter the options by the question ID passed in the URL.
+        """
+        question_id = self.kwargs['question_id']
+        return Option.objects.filter(question_id=question_id)  
+
+
+class SiteBalanceView(APIView):
+    """
+    View to handle the site's balance.
+    """
+    def get(self, request):
+        # Get the first (or only) SiteBalance object
+        site_balance = SiteBalance.objects.first()
+        if not site_balance:
+            return Response({"error": "Site balance not initialized"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Serialize and return the site balance
+        serializer = SiteBalanceSerializer(site_balance)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        # Update or create site balance
+        balance_data = request.data.get("balance")
+        if balance_data is None:
+            return Response({"error": "Balance value is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        site_balance, created = SiteBalance.objects.get_or_create(
+            defaults={'balance': balance_data}  # Initialize with balance if it doesn't exist
+        )
+
+        if not created:
+            site_balance.balance = balance_data
+            site_balance.save()
+
+        return Response({"message": "Site balance updated successfully"}, status=status.HTTP_200_OK)
+
+class TaskViewSet(viewsets.ModelViewSet):
+    queryset = Task.objects.all()
+    serializer_class = TaskSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Task.objects.none()
+        return Task.objects.all()
+
+    @action(detail=False, methods=['post'])
+    def complete_task(self, request):
+        """
+        Mark a task as completed and add the amount to user's total balance
+        """
+        serializer = TaskCompletionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        task_id = serializer.validated_data['task_id']
+        try:
+            task = Task.objects.get(task_id=task_id)
+        except Task.DoesNotExist:
+            return Response(
+                {"detail": "Task not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if task.is_completed:
+            return Response(
+                {"detail": "Task is already completed."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if task.complete_task(request.user):
+            return Response({
+                "detail": "Task completed successfully.",
+                "amount_added": task.amount,
+                "new_balance": request.user.total_balance
+            }, status=status.HTTP_200_OK)
+        
+        return Response(
+            {"detail": "Failed to complete task."},
+            status=status.HTTP_400_BAD_REQUEST
+        )

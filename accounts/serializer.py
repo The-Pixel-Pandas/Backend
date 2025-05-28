@@ -6,6 +6,13 @@ from .utils import get_tokens_for_user
 from rest_framework import serializers
 from .models import Wallet
 from .models import TransactionHistory
+from .models import Question, Option, Bet
+from .models import Question
+from .models import Option
+from .models import Profile
+from rest_framework import serializers
+from .models import SiteBalance
+from .models import Task
 
 User = get_user_model()
 
@@ -52,7 +59,7 @@ class UserSerializer(serializers.ModelSerializer):
         default=1
     )
     total_balance = serializers.DecimalField(
-        max_digits=10, decimal_places=2, required=False, default=0.00
+        max_digits=10, decimal_places=2, required=False, default=10000
     )  # Optional
     all_rank = serializers.IntegerField(required=False, default=0)  # Optional
     monthly_rank = serializers.IntegerField(required=False, default=0)  # Optional
@@ -148,6 +155,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     gender = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     age = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     favorite_subject = serializers.CharField(required=False, allow_null=True, allow_blank=True, default='Not specified')
+    total_balance = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)  # Added total_balance
 
     def validate_favorite_subject(self, value):
         if value is None:
@@ -156,9 +164,11 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         # Ensure all numeric fields are non-negative
-        for field in ['winrate', 'rank_total_profit', 'rank_total_volume',
-                     'rank_monthly_profit', 'rank_monthly_volume',
-                     'rank_weekly_profit', 'rank_weekly_volume', 'age']:
+        for field in [
+            'profit', 'volume', 'winrate', 'rank_total_profit', 'rank_total_volume',
+            'rank_monthly_profit', 'rank_monthly_volume', 'rank_weekly_profit',
+            'rank_weekly_volume', 'age'
+        ]:
             if field in data and data[field] is not None and data[field] < 0:
                 raise serializers.ValidationError({field: 'Must be non-negative'})
         
@@ -171,12 +181,6 @@ class ProfileSerializer(serializers.ModelSerializer):
         for field in ['bio', 'location', 'job', 'gender', 'favorite_subject']:
             if field in data and data[field] is not None:
                 data[field] = str(data[field])
-        
-        # Convert decimal fields to strings
-        if 'profit' in data and data['profit'] is not None:
-            data['profit'] = str(data['profit'])
-        if 'volume' in data and data['volume'] is not None:
-            data['volume'] = str(data['volume'])
         
         # Handle medals
         if 'medals' in data and data['medals'] is not None:
@@ -195,9 +199,56 @@ class ProfileSerializer(serializers.ModelSerializer):
             'profit', 'volume', 'winrate', 'rank_total_profit', 'rank_total_volume',
             'rank_monthly_profit', 'rank_monthly_volume', 'rank_weekly_profit',
             'rank_weekly_volume', 'medals', 'avatar', 'job', 'gender', 'age',
-            'favorite_subject'
+            'favorite_subject', 'total_balance'  # Included total_balance
         ]
-        read_only_fields = ['created_at', 'updated_at']
+        read_only_fields = ['user_id', 'user_name', 'email', 'total_balance']  # Mark total_balance as read-only
+
+class BetSerializer(serializers.Serializer):
+    question_id = serializers.IntegerField(required=True)
+    option_id = serializers.IntegerField(required=True)
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=True, min_value=0.01)
+
+    def validate(self, data):
+        # Validate that question exists and is active
+        try:
+            question = Question.objects.get(pk=data['question_id'])
+            if not question.is_active:
+                raise serializers.ValidationError({"question_id": "This question is no longer active for betting."})
+        except Question.DoesNotExist:
+            raise serializers.ValidationError({"question_id": "Invalid question ID."})
+
+        # Validate that option exists and belongs to the question
+        try:
+            option = Option.objects.get(pk=data['option_id'], question_id=data['question_id'])
+        except Option.DoesNotExist:
+            raise serializers.ValidationError({"option_id": "Invalid option ID or option does not belong to this question."})
+
+        # Validate amount against user's total balance
+        user = self.context.get('request').user
+        if data['amount'] > user.total_balance:
+            raise serializers.ValidationError({"amount": "Insufficient balance to place this bet."})
+
+        return data
+
+    def create(self, validated_data):
+        # Place the bet using the user's method
+        user = self.context.get('request').user
+        bet = user.place_bet(
+            question_id=validated_data['question_id'], 
+            option_id=validated_data['option_id'], 
+            amount=validated_data['amount']
+        )
+        return bet
+
+    def to_representation(self, instance):
+        # Customize the bet representation
+        return {
+            'bet_id': instance.bet_id,
+            'question_id': instance.option.question_id,
+            'option_id': instance.option_id,
+            'amount': instance.amount,
+            'created_at': instance.created_at
+        }
 
     def update(self, instance, validated_data):
         """
@@ -223,10 +274,12 @@ class ProfileSerializer(serializers.ModelSerializer):
         instance.gender = validated_data.get('gender', instance.gender)
         instance.age = validated_data.get('age', instance.age)
         instance.favorite_subject = validated_data.get('favorite_subject', instance.favorite_subject)
+        instance.total_balance = validated_data.get('total_balance', instance.total_balance)  # Added total_balance
 
         # Save the updated instance
         instance.save()
         return instance
+    
 
 class LeaderboardSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.user_name', read_only=True)
@@ -310,3 +363,80 @@ class TransactionHistorySerializer(serializers.ModelSerializer):
     class Meta:
         model = TransactionHistory
         fields = ['transaction_id', 'question', 'amount', 'time', 'date', 'user']
+
+class OptionSerializer(serializers.ModelSerializer):
+    question_id = serializers.IntegerField(source='question.question_id', read_only=True)
+
+    class Meta:
+        model = Option
+        fields = ['option_id', 'description', 'option_volume', 'chance', 'question_id']
+        read_only_fields = ['option_id', 'question_id', 'option_volume']
+
+    def create(self, validated_data):
+        # Get 'question_id' from the URL and associate with the option
+        question_id = self.context['view'].kwargs['question_id']  # Get 'question_id' from the URL
+        question = Question.objects.get(question_id=question_id)
+
+        # Remove 'question' from validated_data if it's included
+        validated_data.pop('question', None)
+
+        # Create and save the option with the associated question
+        option = Option.objects.create(question=question, **validated_data)  # Create and save the option
+        return option
+
+class QuestionSerializer(serializers.ModelSerializer):
+    options = OptionSerializer(many=True, read_only=True)
+    winning_option = OptionSerializer(read_only=True)
+
+    class Meta:
+        model = Question
+        fields = [
+            'question_id',
+            'question_description',
+            'question_topic',
+            'question_type',
+            'question_tag',
+            'question_volume',
+            'created_at',
+            'updated_at',
+            'end_time',
+            'is_active',
+            'options',
+            'winning_option'
+        ]
+        read_only_fields = ['question_id', 'created_at', 'updated_at', 'question_volume', 'options', 'winning_option']
+
+    def create(self, validated_data):
+        # Create the question
+        question = Question.objects.create(**validated_data)
+        
+        # Initialize options (Yes and No)
+        question.initialize_options()
+        
+        return question
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        # Add options to the representation, ensuring only unique options are shown
+        options = instance.options.all().order_by('option_id')
+        representation['options'] = OptionSerializer(options, many=True).data
+        return representation
+
+class BetSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Bet
+        fields = ['user', 'amount']        
+
+class SiteBalanceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SiteBalance
+        fields = ['balance']    
+
+class TaskSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Task
+        fields = ['task_id', 'title', 'description', 'amount', 'created_at', 'is_completed', 'completed_by', 'completed_at']
+        read_only_fields = ['task_id', 'created_at', 'is_completed', 'completed_by', 'completed_at']
+
+class TaskCompletionSerializer(serializers.Serializer):
+    task_id = serializers.IntegerField()    
