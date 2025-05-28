@@ -8,7 +8,7 @@ def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
     
     # Add the custom user_id to the token payload (instead of id)
-    refresh.payload['user_id'] = user.user_id  # Use 'user_id' instead of 'id'
+    refresh.payload['user_id'] = user.id  # Use the actual id field
     
     return {
         'access': str(refresh.access_token),
