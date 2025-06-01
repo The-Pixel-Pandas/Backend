@@ -1,8 +1,8 @@
 {
-    "app": "fervent-antonelli--udq9vabd", 
-    "platform": "django",
-    "django": {
-    "mirror": false,
-    "pythonVersion": "3.12"
+  "app":"pixel-pandas",
+  "port":8000,
+  "build":{
+  "location":"iran"
+  },
+  "disks":[]
   }
-}
