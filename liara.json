@@ -1,8 +1,11 @@
 {
-    "app": "fervent-antonelli--udq9vabd", 
+    "app": "pixel-pandas", 
     "platform": "django",
     "django": {
-    "mirror": false,
-    "pythonVersion": "3.12"
+    "mirror": true,
+    "pythonVersion": "3.12",
+    "timezone": "Asia/Tehran",
+    "compileMessages": false,
+    "modifySettings": false
   }
 }

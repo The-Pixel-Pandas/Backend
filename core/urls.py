@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
+from django.views.generic import RedirectView
 
 
 # Swagger view
@@ -21,8 +22,10 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
+    path('', RedirectView.as_view(url='/api/swagger/', permanent=False)),  # Redirect root to swagger
     path('admin/', admin.site.urls),  # Admin route
     path('api/', include('accounts.urls')),  # Include all accounts URLs
     # Swagger URL
-    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    path('api/swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    path('postgresql/', include('postgresql_app.urls')),
 ]

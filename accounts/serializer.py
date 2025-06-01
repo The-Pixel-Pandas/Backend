@@ -40,33 +40,41 @@ class LoginSerializer(serializers.Serializer):
         data['user'] = user
         return data
 class UserSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=True)  # Required
+    password = serializers.CharField(write_only=True, required=True)
     gmail = serializers.EmailField(
-        required=True,  # Required
-        validators=[UniqueValidator(queryset=User.objects.all())]  # Ensure gmail is unique
+        required=True,
+        validators=[UniqueValidator(queryset=User.objects.all())]
     )
     user_name = serializers.CharField(
-        required=True,  # Required
-        validators=[UniqueValidator(queryset=User.objects.all())]  # Ensure user_name is unique
+        required=True,
+        validators=[UniqueValidator(queryset=User.objects.all())]
     )
-    first_name = serializers.CharField(required=False, allow_blank=True)  # Optional
-    last_name = serializers.CharField(required=False, allow_blank=True)  # Optional
-    age = serializers.IntegerField(required=False, allow_null=True, min_value=0)  # Optional
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    last_name = serializers.CharField(required=False, allow_blank=True)
+    age = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     avatar = serializers.IntegerField(
-        required=False,  # Optional
+        required=False,
         min_value=1,
         max_value=8,
         default=1
     )
     total_balance = serializers.DecimalField(
-        max_digits=10, decimal_places=2, required=False, default=10000
-    )  # Optional
-    all_rank = serializers.IntegerField(required=False, default=0)  # Optional
-    monthly_rank = serializers.IntegerField(required=False, default=0)  # Optional
-    weekly_rank = serializers.IntegerField(required=False, default=0)  # Optional
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        default=10000,
+        min_value=0
+    )
+    all_rank = serializers.IntegerField(required=False, default=0, min_value=0)
+    monthly_rank = serializers.IntegerField(required=False, default=0, min_value=0)
+    weekly_rank = serializers.IntegerField(required=False, default=0, min_value=0)
     wallet_field = serializers.DecimalField(
-        max_digits=10, decimal_places=2, required=False, default=0.00
-    )  # Optional
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        default=0.00,
+        min_value=0
+    )
 
     class Meta:
         model = User
@@ -140,8 +148,8 @@ class ProfileSerializer(serializers.ModelSerializer):
     bio = serializers.CharField(required=False, allow_blank=True)
     location = serializers.CharField(required=False, allow_blank=True)
     birth_date = serializers.DateField(required=False, allow_null=True)
-    profit = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
-    volume = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    profit = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, min_value=0)
+    volume = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, min_value=0)
     winrate = serializers.IntegerField(required=False, min_value=0, max_value=100)
     rank_total_profit = serializers.IntegerField(required=False, min_value=0)
     rank_total_volume = serializers.IntegerField(required=False, min_value=0)
@@ -150,12 +158,12 @@ class ProfileSerializer(serializers.ModelSerializer):
     rank_weekly_profit = serializers.IntegerField(required=False, min_value=0)
     rank_weekly_volume = serializers.IntegerField(required=False, min_value=0)
     medals = serializers.JSONField(required=False, default=list)
-    avatar = serializers.IntegerField(required=False, min_value=1, max_value=9, allow_null=True)
+    avatar = serializers.IntegerField(required=False, min_value=1, max_value=8, allow_null=True)
     job = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     gender = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     age = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     favorite_subject = serializers.CharField(required=False, allow_null=True, allow_blank=True, default='Not specified')
-    total_balance = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)  # Added total_balance
+    total_balance = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True, min_value=0)
 
     def validate_favorite_subject(self, value):
         if value is None:
