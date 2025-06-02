@@ -51,6 +51,8 @@ from rest_framework.response import Response
 from .models import Option, Question, User
 from .serializer import OptionSerializer
 from decimal import Decimal
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 
 User = get_user_model()
@@ -200,11 +202,21 @@ class ProfileViewSet(viewsets.GenericViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Only return profiles belonging to the authenticated user
+        """
+        Return profiles belonging to the authenticated user.
+        """
+        if not self.request.user.is_authenticated:
+            return Profile.objects.none()
         return Profile.objects.filter(user=self.request.user)
 
     def retrieve(self, request, *args, **kwargs):
         """Retrieve a specific profile by ID"""
+        if not request.user.is_authenticated:
+            return Response(
+                {"detail": "Authentication credentials were not provided."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
         profile_id = kwargs.get('pk')
         try:
             # Ensure the profile belongs to the authenticated user
@@ -219,6 +231,12 @@ class ProfileViewSet(viewsets.GenericViewSet):
 
     def update(self, request, *args, **kwargs):
         """Update a specific profile by ID"""
+        if not request.user.is_authenticated:
+            return Response(
+                {"detail": "Authentication credentials were not provided."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
         profile_id = kwargs.get('pk')
         try:
             # Ensure the profile belongs to the authenticated user
@@ -257,6 +275,12 @@ class ProfileViewSet(viewsets.GenericViewSet):
 
     def destroy(self, request, *args, **kwargs):
         """Delete a specific profile by ID"""
+        if not request.user.is_authenticated:
+            return Response(
+                {"detail": "Authentication credentials were not provided."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
         profile_id = kwargs.get('pk')
         try:
             # Ensure the profile belongs to the authenticated user
@@ -273,9 +297,16 @@ class ProfileViewSet(viewsets.GenericViewSet):
     def perform_destroy(self, instance):
         """Custom logic for deleting a profile"""
         instance.delete()
+
     @action(detail=False, methods=['get'])
     def me(self, request):
         """Get the current user's profile"""
+        if not request.user.is_authenticated:
+            return Response(
+                {"detail": "Authentication credentials were not provided."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
         try:
             profile = Profile.objects.get(user=request.user)
         except Profile.DoesNotExist:
@@ -285,6 +316,7 @@ class ProfileViewSet(viewsets.GenericViewSet):
             )
         serializer = self.get_serializer(profile)
         return Response(serializer.data)
+
 @ensure_csrf_cookie
 def get_csrf_token(request):
     return JsonResponse({'detail': 'CSRF cookie set'})
@@ -418,35 +450,127 @@ class QuestionPagination(PageNumberPagination):
 class QuestionViewSet(viewsets.ModelViewSet):
     """
     ViewSet for viewing and editing questions.
+    
+    Search Parameters:
+    - topic: Filter questions by topic
+    - type: Filter questions by type
+    - tag: Filter questions by tag
+    - search: Search in topic, description, type, and tag
+    - is_active: Filter by active status (true/false)
     """
     queryset = Question.objects.all()
     serializer_class = QuestionSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     pagination_class = QuestionPagination
     http_method_names = ['get', 'post', 'put', 'delete']  # Remove patch from allowed methods
 
+    @swagger_auto_schema(
+        operation_description="List all questions with optional filtering",
+        manual_parameters=[
+            openapi.Parameter(
+                'topic',
+                openapi.IN_QUERY,
+                description="Filter questions by topic",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'type',
+                openapi.IN_QUERY,
+                description="Filter questions by type",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'tag',
+                openapi.IN_QUERY,
+                description="Filter questions by tag",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'search',
+                openapi.IN_QUERY,
+                description="Search in topic, description, type, and tag",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                'is_active',
+                openapi.IN_QUERY,
+                description="Filter by active status (true/false)",
+                type=openapi.TYPE_BOOLEAN,
+                required=False
+            ),
+            openapi.Parameter(
+                'page',
+                openapi.IN_QUERY,
+                description="Page number",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'page_size',
+                openapi.IN_QUERY,
+                description="Number of items per page",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+        ]
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
     def get_queryset(self):
         """
-        Return all questions for authenticated users.
+        Return filtered questions based on search parameters.
         """
-        return Question.objects.all()
+        queryset = Question.objects.all()
+        
+        # Get search parameters
+        topic = self.request.query_params.get('topic', None)
+        type = self.request.query_params.get('type', None)
+        tag = self.request.query_params.get('tag', None)
+        search = self.request.query_params.get('search', None)
+        is_active = self.request.query_params.get('is_active', None)
+
+        # Apply filters if parameters are provided
+        if topic:
+            queryset = queryset.filter(question_topic__icontains=topic)
+        
+        if type:
+            queryset = queryset.filter(question_type__icontains=type)
+        
+        if tag:
+            queryset = queryset.filter(question_tag__icontains=tag)
+        
+        if search:
+            queryset = queryset.filter(
+                Q(question_topic__icontains=search) |
+                Q(question_description__icontains=search) |
+                Q(question_type__icontains=search) |
+                Q(question_tag__icontains=search)
+            )
+        
+        if is_active is not None:
+            is_active = is_active.lower() == 'true'
+            queryset = queryset.filter(is_active=is_active)
+
+        return queryset.order_by('-created_at')  # Order by newest first
 
     def get_permissions(self):
         """
         Set permissions based on the action.
         """
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            permission_classes = [permissions.IsAuthenticated]
-        else:
-            permission_classes = [permissions.AllowAny]
-        return [permission() for permission in permission_classes]
+            return [permissions.IsAuthenticated()]
+        return [permissions.AllowAny()]
 
     def create(self, request, *args, **kwargs):
         """
         Create a new question.
         Only admin users can create questions.
         """
-        if request.user.user_name != "admin":
+        if not request.user.is_authenticated or request.user.user_name != "admin":
             return Response(
                 {"detail": "Only admin users can create questions."},
                 status=status.HTTP_403_FORBIDDEN
@@ -459,7 +583,7 @@ class QuestionViewSet(viewsets.ModelViewSet):
         Only admin users can update questions.
         Partial updates are allowed.
         """
-        if request.user.user_name != "admin":
+        if not request.user.is_authenticated or request.user.user_name != "admin":
             return Response(
                 {"detail": "Only admin users can update questions."},
                 status=status.HTTP_403_FORBIDDEN
@@ -472,7 +596,7 @@ class QuestionViewSet(viewsets.ModelViewSet):
         Delete a question.
         Only admin users can delete questions.
         """
-        if request.user.user_name != "admin":
+        if not request.user.is_authenticated or request.user.user_name != "admin":
             return Response(
                 {"detail": "Only admin users can delete questions."},
                 status=status.HTTP_403_FORBIDDEN
