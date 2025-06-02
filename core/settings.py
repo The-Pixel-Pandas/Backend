@@ -14,8 +14,10 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file based on environment
+ENV = os.getenv('DJANGO_ENV', 'test')  # Default to production if not specified
+env_file = f'.env.{ENV}'
+load_dotenv(env_file)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -33,7 +35,7 @@ DEBUG = True
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
-    'fervent-antonelli--udq9vabd.liara.run'  # Your deployed domain
+    'pixel_pandas.liara.run'  # Your deployed domain
 ]
 
 
@@ -121,12 +123,6 @@ WSGI_APPLICATION = "core.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.sqlite3',
-#         'NAME': BASE_DIR / 'db.sqlite3',
-#     }
-# }
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -137,6 +133,12 @@ DATABASES = {
         'PORT': os.getenv('DB_PORT'),
     }
 }
+
+# Add test database configuration
+if ENV == 'test':
+    DATABASES['default']['TEST'] = {
+        'NAME': os.getenv('DB_NAME'),  # Use the test database name
+    }
 
 
 # Password validation
