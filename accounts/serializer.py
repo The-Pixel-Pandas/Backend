@@ -443,6 +443,11 @@ class TaskCompletionSerializer(serializers.Serializer):
     task_id = serializers.IntegerField()    
 
 class NewsSerializer(serializers.ModelSerializer):
+    news_description = serializers.CharField(required=False)
+    news_topic = serializers.CharField(required=False)
+    news_type = serializers.CharField(required=False)
+    news_tag = serializers.CharField(required=False)
+
     class Meta:
         model = News
         fields = ['news_id', 'news_description', 'news_topic', 'news_type', 'news_tag']

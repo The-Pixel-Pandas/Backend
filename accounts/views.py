@@ -10,6 +10,7 @@ from rest_framework.decorators import action, api_view
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.generics import CreateAPIView
+from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q
 from .models import User, Profile, Wallet, Leaderboard, Task, News
 from .serializer import UserSerializer, ProfileSerializer, LoginSerializer, LeaderboardSerializer, LeaderboardResponseSerializer, TaskSerializer, TaskCompletionSerializer, NewsSerializer
@@ -409,14 +410,74 @@ class QuestionCreateView(CreateAPIView):
     queryset = Question.objects.all()
     serializer_class = QuestionSerializer
 
-class QuestionListView(APIView):
+class QuestionPagination(PageNumberPagination):
+    page_size = 5
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+class QuestionViewSet(viewsets.ModelViewSet):
     """
-    List all questions or create a new question.
+    ViewSet for viewing and editing questions.
     """
-    def get(self, request):
-        questions = Question.objects.all()
-        serializer = QuestionSerializer(questions, many=True)
-        return Response(serializer.data)
+    queryset = Question.objects.all()
+    serializer_class = QuestionSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    pagination_class = QuestionPagination
+    http_method_names = ['get', 'post', 'put', 'delete']  # Remove patch from allowed methods
+
+    def get_queryset(self):
+        """
+        Return all questions for authenticated users.
+        """
+        return Question.objects.all()
+
+    def get_permissions(self):
+        """
+        Set permissions based on the action.
+        """
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            permission_classes = [permissions.IsAuthenticated]
+        else:
+            permission_classes = [permissions.AllowAny]
+        return [permission() for permission in permission_classes]
+
+    def create(self, request, *args, **kwargs):
+        """
+        Create a new question.
+        Only admin users can create questions.
+        """
+        if request.user.user_name != "admin":
+            return Response(
+                {"detail": "Only admin users can create questions."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        """
+        Update a question.
+        Only admin users can update questions.
+        Partial updates are allowed.
+        """
+        if request.user.user_name != "admin":
+            return Response(
+                {"detail": "Only admin users can update questions."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        partial = True  # Always allow partial updates
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Delete a question.
+        Only admin users can delete questions.
+        """
+        if request.user.user_name != "admin":
+            return Response(
+                {"detail": "Only admin users can delete questions."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().destroy(request, *args, **kwargs)
 
 class QuestionDetailView(APIView):
     """
@@ -661,6 +722,11 @@ class TaskViewSet(viewsets.ModelViewSet):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+class NewsPagination(PageNumberPagination):
+    page_size = 5
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 class NewsViewSet(viewsets.ModelViewSet):
     """
     ViewSet for viewing and editing news articles.
@@ -668,15 +734,17 @@ class NewsViewSet(viewsets.ModelViewSet):
     queryset = News.objects.all()
     serializer_class = NewsSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    http_method_names = ['get', 'post', 'put', 'delete']  # Remove patch from allowed methods
+    pagination_class = NewsPagination
 
     def create(self, request, *args, **kwargs):
         """
         Create a new news article.
-        Only staff members can create news articles.
+        Only admin users can create news articles.
         """
-        if not request.user.is_staff:
+        if request.user.user_name != "admin":
             return Response(
-                {"detail": "Only staff members can create news articles."},
+                {"detail": "Only admin users can create news articles."},
                 status=status.HTTP_403_FORBIDDEN
             )
         return super().create(request, *args, **kwargs)
@@ -684,23 +752,25 @@ class NewsViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         """
         Update a news article.
-        Only staff members can update news articles.
+        Only admin users can update news articles.
+        Partial updates are allowed.
         """
-        if not request.user.is_staff:
+        if request.user.user_name != "admin":
             return Response(
-                {"detail": "Only staff members can update news articles."},
+                {"detail": "Only admin users can update news articles."},
                 status=status.HTTP_403_FORBIDDEN
             )
+        partial = True  # Always allow partial updates
         return super().update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
         """
         Delete a news article.
-        Only staff members can delete news articles.
+        Only admin users can delete news articles.
         """
-        if not request.user.is_staff:
+        if request.user.user_name != "admin":
             return Response(
-                {"detail": "Only staff members can delete news articles."},
+                {"detail": "Only admin users can delete news articles."},
                 status=status.HTTP_403_FORBIDDEN
             )
         return super().destroy(request, *args, **kwargs)

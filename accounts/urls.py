@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     LoginView, SignupView, ProfileViewSet, LeaderboardViewSet, get_csrf_token,
     WalletView, TransactionHistoryView, ResolveQuestionView, PlaceBetView,
-    QuestionCreateView, OptionListCreateView, OptionListView, TaskViewSet,
+    QuestionViewSet, OptionListCreateView, OptionListView, TaskViewSet,
     NewsViewSet
 )
 from .views import SiteBalanceView
@@ -13,6 +13,7 @@ router.register(r'profiles', ProfileViewSet, basename='profile')
 router.register(r'leaderboards', LeaderboardViewSet, basename='leaderboard')
 router.register(r'tasks', TaskViewSet, basename='task')
 router.register(r'news', NewsViewSet, basename='news')
+router.register(r'questions', QuestionViewSet, basename='question')
 
 urlpatterns = [
     # Include the router URLs directly
@@ -35,7 +36,6 @@ urlpatterns = [
     path('transaction-history/', TransactionHistoryView.as_view(), name='transaction-history'),
 
     # Question-related endpoints
-    path('questions/', QuestionCreateView.as_view(), name='create-question'),
     path('questions/<int:pk>/resolve/', ResolveQuestionView.as_view(), name='resolve-question'),
 
     # Option-related endpoints
