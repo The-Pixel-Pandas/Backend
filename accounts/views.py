@@ -11,8 +11,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.generics import CreateAPIView
 from django.db.models import Q
-from .models import User, Profile, Wallet, Leaderboard, Task
-from .serializer import UserSerializer, ProfileSerializer, LoginSerializer, LeaderboardSerializer, LeaderboardResponseSerializer, TaskSerializer, TaskCompletionSerializer
+from .models import User, Profile, Wallet, Leaderboard, Task, News
+from .serializer import UserSerializer, ProfileSerializer, LoginSerializer, LeaderboardSerializer, LeaderboardResponseSerializer, TaskSerializer, TaskCompletionSerializer, NewsSerializer
 from .utils import get_tokens_for_user
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -660,3 +660,47 @@ class TaskViewSet(viewsets.ModelViewSet):
             {"detail": "Failed to complete task."},
             status=status.HTTP_400_BAD_REQUEST
         )
+
+class NewsViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for viewing and editing news articles.
+    """
+    queryset = News.objects.all()
+    serializer_class = NewsSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def create(self, request, *args, **kwargs):
+        """
+        Create a new news article.
+        Only staff members can create news articles.
+        """
+        if not request.user.is_staff:
+            return Response(
+                {"detail": "Only staff members can create news articles."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        """
+        Update a news article.
+        Only staff members can update news articles.
+        """
+        if not request.user.is_staff:
+            return Response(
+                {"detail": "Only staff members can update news articles."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Delete a news article.
+        Only staff members can delete news articles.
+        """
+        if not request.user.is_staff:
+            return Response(
+                {"detail": "Only staff members can delete news articles."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().destroy(request, *args, **kwargs)

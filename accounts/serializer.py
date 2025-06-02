@@ -13,6 +13,7 @@ from .models import Profile
 from rest_framework import serializers
 from .models import SiteBalance
 from .models import Task
+from .models import News
 
 User = get_user_model()
 
@@ -440,3 +441,9 @@ class TaskSerializer(serializers.ModelSerializer):
 
 class TaskCompletionSerializer(serializers.Serializer):
     task_id = serializers.IntegerField()    
+
+class NewsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = News
+        fields = ['news_id', 'news_description', 'news_topic', 'news_type', 'news_tag']
+        read_only_fields = ['news_id']    
