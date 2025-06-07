@@ -50,6 +50,9 @@ from rest_framework.response import Response
 from .models import Option, Question, User
 from .serializer import OptionSerializer
 from decimal import Decimal
+from rest_framework.generics import DestroyAPIView,UpdateAPIView
+from .models import Comment
+from .serializer import CommentSerializer
 
 
 User = get_user_model()
@@ -401,7 +404,8 @@ class TransactionHistoryView(APIView):
         # Get the transaction history for the authenticated user
         transactions = TransactionHistory.objects.filter(user=request.user)
         serializer = TransactionHistorySerializer(transactions, many=True)
-        return Response(serializer.data)    
+        return Response(serializer.data)
+ 
 class QuestionCreateView(CreateAPIView):
     """
     API endpoint to create a new question.
@@ -660,3 +664,35 @@ class TaskViewSet(viewsets.ModelViewSet):
             {"detail": "Failed to complete task."},
             status=status.HTTP_400_BAD_REQUEST
         )
+
+######### Comment #########
+class CommentCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        """
+        Create Comment with Post Api
+        """
+
+        info = CommentSerializer(data=request.data)
+
+        if info.is_valid():
+            try:
+                user = User.objects.get(id=info.validated_data['user_id'])
+            except User.DoesNotExist:
+                return Response({'message': 'user not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+            return Response({'message': 'comment was created.'}, status=status.HTTP_201_CREATED)
+        else:
+            return Response(info.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+class CommentDeleteView(DestroyAPIView):
+    permission_classes = [IsManager]
+    queryset = Comment.objects.all()
+    serializer_class = CommentSerializer
+    lookup_field = 'pk'
+
+class CommentUpdateView(UpdateAPIView):
+    permission_classes = [IsManager]
+    queryset = Comment.objects.all()
+    serializer_class = CommentSerializer
+    lookup_field = 'pk'
