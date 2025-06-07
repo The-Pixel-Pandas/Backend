@@ -446,4 +446,5 @@ class CommentSerializer(serializers.ModelSerializer):
     user = UserSerializer(required=False)
     class Meta:
         model = Comment
+        unique_together = ('comment', 'user')
         fields = "__all__"
