@@ -15,6 +15,7 @@ from decimal import Decimal
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from decimal import Decimal
+from config.utils import jalali_converter_with_hour
 
 
 
@@ -468,25 +469,23 @@ class Task(models.Model):
         return False
 
 class Comment(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="comments")
-    text = models.TextField()
-    created = models.DateTimeField(auto_now_add=True)
-    valid = models.BooleanField(default=False)
-    rating = models.FloatField(default=0, validators=[MaxValueValidator(5), MinValueValidator(0)])
-
+    question = models.ForeignKey(Question, related_name='comments', on_delete=models.CASCADE)
+    user = models.ForeignKey(User, related_name='comments', on_delete=models.CASCADE)
+    content = models.TextField(max_length=1000)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.user}"
+        return f"Comment by {self.user} on {self.question}"
 
     def star_rating(self):
         return self.rating * 20
 
     def shamsi_date(self):
-        return jalali_converter_with_hour(self.created) 
+        return jalali_converter_with_hour(self.created_at)
     
     def days_since_creation(self):
         now = timezone.now()
-        created_naive = timezone.make_naive(self.created, timezone.get_default_timezone())
+        created_naive = timezone.make_naive(self.created_at, timezone.get_default_timezone())
         created_aware = timezone.make_aware(created_naive, timezone.get_default_timezone())
         days = (now - created_aware).days
         return f"{days} روز پیش"
