@@ -335,21 +335,6 @@ class News(models.Model):
     def __str__(self):
         return self.news_topic
 
-
-# Comment Model
-class Comment(models.Model):
-    comment_id = models.AutoField(primary_key=True)
-    question = models.ForeignKey(Question, on_delete=models.CASCADE)
-    news = models.ForeignKey(News, on_delete=models.CASCADE)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, to_field='id')  # Referencing 'user_id'
-    like_number = models.IntegerField()
-    comment_date = models.DateField()
-    comment_time = models.TimeField()
-
-    def __str__(self):
-        return f"Comment {self.comment_id}"
-
-
 # Wallet Model (related to User)
 class Wallet(models.Model):
     total_balance = models.DecimalField(max_digits=10, decimal_places=2, default=10000)
@@ -468,14 +453,21 @@ class Task(models.Model):
             return True
         return False
 
+# Comment Model
 class Comment(models.Model):
+    comment_id = models.AutoField(primary_key=True)
     question = models.ForeignKey(Question, related_name='comments', on_delete=models.CASCADE)
+    # news = models.ForeignKey(News, on_delete=models.CASCADE)
     user = models.ForeignKey(User, related_name='comments', on_delete=models.CASCADE)
     content = models.TextField(max_length=1000)
     created_at = models.DateTimeField(auto_now_add=True)
+    like_number = models.IntegerField()
 
     def __str__(self):
         return f"Comment by {self.user} on {self.question}"
+
+    #def __str__(self):
+    #    return f"Comment {self.comment_id}"
 
     def star_rating(self):
         return self.rating * 20
@@ -489,4 +481,6 @@ class Comment(models.Model):
         created_aware = timezone.make_aware(created_naive, timezone.get_default_timezone())
         days = (now - created_aware).days
         return f"{days} روز پیش"
-      
+    
+class Meta:
+    unique_together = ('comment', 'user')
