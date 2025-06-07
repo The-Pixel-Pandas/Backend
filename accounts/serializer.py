@@ -403,7 +403,8 @@ class QuestionSerializer(serializers.ModelSerializer):
             'end_time',
             'is_active',
             'options',
-            'winning_option'
+            'winning_option',
+            'image'
         ]
         read_only_fields = ['question_id', 'created_at', 'updated_at', 'question_volume', 'options', 'winning_option']
 

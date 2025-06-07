@@ -4,6 +4,8 @@ from rest_framework.routers import DefaultRouter
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
+from django.conf import settings
+from django.conf.urls.static import static
 
 
 # Swagger view
@@ -25,4 +27,4 @@ urlpatterns = [
     path('api/', include('accounts.urls')),  # Include all accounts URLs
     # Swagger URL
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
-]
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)  # Serve media files in development

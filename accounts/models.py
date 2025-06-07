@@ -193,6 +193,7 @@ class Question(models.Model):
     end_time = models.DateTimeField(default=now)
     is_active = models.BooleanField(default=True)
     winning_option = models.ForeignKey('Option', on_delete=models.SET_NULL, null=True, blank=True, related_name='winning_questions')
+    image = models.ImageField(upload_to='questions/', null=True, blank=True)  # Store image files
 
     def __str__(self):
         return self.question_topic
