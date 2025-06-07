@@ -481,6 +481,3 @@ class Comment(models.Model):
         created_aware = timezone.make_aware(created_naive, timezone.get_default_timezone())
         days = (now - created_aware).days
         return f"{days} روز پیش"
-    
-class Meta:
-    unique_together = ('comment', 'user')
