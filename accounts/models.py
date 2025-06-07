@@ -466,4 +466,28 @@ class Task(models.Model):
 
             return True
         return False
+
+class Comment(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="comments")
+    text = models.TextField()
+    created = models.DateTimeField(auto_now_add=True)
+    valid = models.BooleanField(default=False)
+    rating = models.FloatField(default=0, validators=[MaxValueValidator(5), MinValueValidator(0)])
+
+
+    def __str__(self):
+        return f"{self.user}"
+
+    def star_rating(self):
+        return self.rating * 20
+
+    def shamsi_date(self):
+        return jalali_converter_with_hour(self.created) 
+    
+    def days_since_creation(self):
+        now = timezone.now()
+        created_naive = timezone.make_naive(self.created, timezone.get_default_timezone())
+        created_aware = timezone.make_aware(created_naive, timezone.get_default_timezone())
+        days = (now - created_aware).days
+        return f"{days} روز پیش"
       
