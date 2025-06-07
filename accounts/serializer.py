@@ -13,6 +13,7 @@ from .models import Profile
 from rest_framework import serializers
 from .models import SiteBalance
 from .models import Task
+from .models import Comment
 
 User = get_user_model()
 
@@ -439,4 +440,10 @@ class TaskSerializer(serializers.ModelSerializer):
         read_only_fields = ['task_id', 'created_at', 'is_completed', 'completed_by', 'completed_at']
 
 class TaskCompletionSerializer(serializers.Serializer):
-    task_id = serializers.IntegerField()    
+    task_id = serializers.IntegerField()
+
+class CommentSerializer(serializers.ModelSerializer):
+    user = UserSerializer(required=False)
+    class Meta:
+        model = Comment
+        fields = "__all__"
