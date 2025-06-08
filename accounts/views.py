@@ -479,8 +479,12 @@ class TransactionHistoryView(APIView):
         paginator = self.pagination_class()
         paginated_transactions = paginator.paginate_queryset(transactions, request)
         
-        # Serialize the paginated data
-        serializer = TransactionHistorySerializer(paginated_transactions, many=True)
+        # Serialize the paginated data with request context
+        serializer = TransactionHistorySerializer(
+            paginated_transactions, 
+            many=True,
+            context={'request': request}
+        )
         
         # Return paginated response
         return paginator.get_paginated_response(serializer.data)
@@ -996,29 +1000,32 @@ class TaskViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Add the amount to the user's balance
-        task.complete_task(user)
+        try:
+            with transaction.atomic():
+                # Add the amount to the user's balance
+                user.total_balance += task.amount
+                user.save()
 
-        # Create a transaction history record
-        transaction = TransactionHistory.objects.create(
-            task=task,
-            amount=task.amount,
-            user=user,
-            transaction_type='TASK_REWARD'
-        )
+                # Create a transaction history record
+                TransactionHistory.objects.create(
+                    task=task,
+                    amount=task.amount,
+                    user=user,
+                    transaction_type='TASK_REWARD'
+                )
 
-        return Response({
-            'message': 'Task completed successfully.',
-            'new_balance': user.total_balance,
-            'task_id': task_id,
-            'amount': float(task.amount),
-            'transaction': {
-                'transaction_id': transaction.transaction_id,
-                'amount': float(transaction.amount),
-                'date': transaction.date,
-                'type': transaction.transaction_type
-            }
-        }, status=status.HTTP_200_OK)
+                return Response({
+                    'message': 'Task completed successfully.',
+                    'new_balance': float(user.total_balance),
+                    'task_id': task_id,
+                    'amount': float(task.amount)
+                }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {'error': f'Error completing task: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class ProfileUpdateView(APIView):
     permission_classes = [IsAuthenticated]

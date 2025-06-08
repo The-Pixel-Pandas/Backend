@@ -372,17 +372,73 @@ class LeaderboardResponseSerializer(serializers.Serializer):
 class TransactionHistorySerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.user_name', read_only=True)
     question_topic = serializers.CharField(source='question.question_topic', read_only=True)
+    question_description = serializers.CharField(source='question.question_description', read_only=True)
+    question_image_url = serializers.SerializerMethodField()
+    question_image_base64 = serializers.SerializerMethodField()
     option_description = serializers.CharField(source='option.description', read_only=True)
-    task_title = serializers.CharField(source='task.title', read_only=True)
+    task_topic = serializers.CharField(source='task.task_topic', read_only=True)
+    task_description = serializers.CharField(source='task.task_description', read_only=True)
+    task_image_url = serializers.SerializerMethodField()
+    task_image_base64 = serializers.SerializerMethodField()
 
     class Meta:
         model = TransactionHistory
         fields = [
-            'transaction_id', 'question', 'question_topic', 'task', 'task_title',
-            'amount', 'time', 'date', 'user', 'user_name', 'option',
-            'option_description', 'transaction_type'
+            'transaction_id', 'question', 'question_topic', 'question_description',
+            'question_image_url', 'question_image_base64', 'task', 'task_topic',
+            'task_description', 'task_image_url', 'task_image_base64', 'amount',
+            'time', 'date', 'user', 'user_name', 'option', 'option_description',
+            'transaction_type'
         ]
         read_only_fields = fields
+
+    def get_question_image_url(self, obj):
+        if obj.question and obj.question.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.question.image.url)
+            return obj.question.image.url
+        return None
+
+    def get_question_image_base64(self, obj):
+        if obj.question and obj.question.image:
+            try:
+                import base64
+                from django.core.files.storage import default_storage
+                
+                with default_storage.open(obj.question.image.name, 'rb') as image_file:
+                    image_data = image_file.read()
+                    encoded_string = base64.b64encode(image_data).decode('utf-8')
+                    ext = obj.question.image.name.split('.')[-1].lower()
+                    return f"data:image/{ext};base64,{encoded_string}"
+            except Exception as e:
+                print(f"Error encoding question image to base64: {str(e)}")
+                return None
+        return None
+
+    def get_task_image_url(self, obj):
+        if obj.task and obj.task.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.task.image.url)
+            return obj.task.image.url
+        return None
+
+    def get_task_image_base64(self, obj):
+        if obj.task and obj.task.image:
+            try:
+                import base64
+                from django.core.files.storage import default_storage
+                
+                with default_storage.open(obj.task.image.name, 'rb') as image_file:
+                    image_data = image_file.read()
+                    encoded_string = base64.b64encode(image_data).decode('utf-8')
+                    ext = obj.task.image.name.split('.')[-1].lower()
+                    return f"data:image/{ext};base64,{encoded_string}"
+            except Exception as e:
+                print(f"Error encoding task image to base64: {str(e)}")
+                return None
+        return None
 
 class OptionSerializer(serializers.ModelSerializer):
     question_id = serializers.IntegerField(source='question.question_id', read_only=True)

@@ -495,7 +495,18 @@ class Task(models.Model):
         """
         Mark a task as completed and add the amount to user's total balance
         """
-        user.total_balance += self.amount
-        user.save()
-        return True
+        with transaction.atomic():
+            # Update user's balance
+            user.total_balance += self.amount
+            user.save()
+            
+            # Create transaction history record
+            TransactionHistory.objects.create(
+                task=self,
+                amount=self.amount,
+                user=user,
+                transaction_type='TASK_REWARD'
+            )
+            
+            return True
       
