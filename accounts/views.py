@@ -53,7 +53,18 @@ from .serializer import OptionSerializer
 from decimal import Decimal
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+from rest_framework.parsers import MultiPartParser, FormParser
+from django.utils import timezone
+from django.db import transaction
+from rest_framework import serializers
+from rest_framework.decorators import action
+from .models import TransactionHistory
 
+# Add StandardResultsSetPagination class
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 User = get_user_model()
 
@@ -359,15 +370,28 @@ class LeaderboardViewSet(viewsets.ViewSet):
                 user.update_ranks()
                 user.update_token()
 
+                # Get user's profile
+                try:
+                    profile = user.profile
+                except Profile.DoesNotExist:
+                    profile = None
+
                 # Create ranking entry
                 ranking_entry = {
-                    'id': user.id,  # Add the user's id here
+                    'id': user.id,
                     'avatar': user.avatar if user.avatar else None,
                     'username': user.user_name,
-                    'rank': rank,  # Use the rank from the loop
+                    'rank': rank,
                     'profit': float(user.total_balance),
                     'volume': float(user.wallet_field),
-                    'token': user.user_token
+                    'token': user.user_token,
+                    'bio': profile.bio if profile else '',
+                    'medals': profile.medals if profile else [],
+                    'total_balance': float(user.total_balance),
+                    'winrate': profile.winrate if profile else 0,
+                    'job': profile.job if profile else None,
+                    'location': profile.location if profile else None,
+                    'favorite_subject': profile.favorite_subject if profile else 'Not specified'
                 }
 
                 # Add to appropriate category
@@ -429,12 +453,38 @@ class WalletView(APIView):
 
 class TransactionHistoryView(APIView):
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get(self, request, *args, **kwargs):
         # Get the transaction history for the authenticated user
         transactions = TransactionHistory.objects.filter(user=request.user)
-        serializer = TransactionHistorySerializer(transactions, many=True)
-        return Response(serializer.data)    
+        
+        # Filter by transaction type if provided
+        transaction_type = request.query_params.get('type')
+        if transaction_type:
+            transactions = transactions.filter(transaction_type=transaction_type)
+        
+        # Filter by date range if provided
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        if start_date:
+            transactions = transactions.filter(date__gte=start_date)
+        if end_date:
+            transactions = transactions.filter(date__lte=end_date)
+        
+        # Order by most recent first
+        transactions = transactions.order_by('-date', '-time')
+        
+        # Apply pagination
+        paginator = self.pagination_class()
+        paginated_transactions = paginator.paginate_queryset(transactions, request)
+        
+        # Serialize the paginated data
+        serializer = TransactionHistorySerializer(paginated_transactions, many=True)
+        
+        # Return paginated response
+        return paginator.get_paginated_response(serializer.data)
+
 class QuestionCreateView(CreateAPIView):
     """
     API endpoint to create a new question.
@@ -443,139 +493,118 @@ class QuestionCreateView(CreateAPIView):
     serializer_class = QuestionSerializer
 
 class QuestionPagination(PageNumberPagination):
-    page_size = 5
+    page_size = 20
     page_size_query_param = 'page_size'
     max_page_size = 100
 
+    def get_paginated_response(self, data):
+        return Response({
+            'count': self.page.paginator.count,
+            'total_pages': self.page.paginator.num_pages,
+            'current_page': self.page.number,
+            'next': self.get_next_link(),
+            'previous': self.get_previous_link(),
+            'results': data
+        })
+
 class QuestionViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for viewing and editing questions.
-    
-    Search Parameters:
-    - topic: Filter questions by topic
-    - type: Filter questions by type
-    - tag: Filter questions by tag
-    - search: Search in topic, description, type, and tag
-    - is_active: Filter by active status (true/false)
-    """
     queryset = Question.objects.all()
     serializer_class = QuestionSerializer
+    permission_classes = [IsAuthenticated]
     pagination_class = QuestionPagination
-    http_method_names = ['get', 'post', 'put', 'delete']  # Remove patch from allowed methods
 
-    @swagger_auto_schema(
-        operation_description="List all questions with optional filtering",
-        manual_parameters=[
-            openapi.Parameter(
-                'topic',
-                openapi.IN_QUERY,
-                description="Filter questions by topic",
-                type=openapi.TYPE_STRING,
-                required=False
-            ),
-            openapi.Parameter(
-                'type',
-                openapi.IN_QUERY,
-                description="Filter questions by type",
-                type=openapi.TYPE_STRING,
-                required=False
-            ),
-            openapi.Parameter(
-                'tag',
-                openapi.IN_QUERY,
-                description="Filter questions by tag",
-                type=openapi.TYPE_STRING,
-                required=False
-            ),
-            openapi.Parameter(
-                'search',
-                openapi.IN_QUERY,
-                description="Search in topic, description, type, and tag",
-                type=openapi.TYPE_STRING,
-                required=False
-            ),
-            openapi.Parameter(
-                'is_active',
-                openapi.IN_QUERY,
-                description="Filter by active status (true/false)",
-                type=openapi.TYPE_BOOLEAN,
-                required=False
-            ),
-            openapi.Parameter(
-                'page',
-                openapi.IN_QUERY,
-                description="Page number",
-                type=openapi.TYPE_INTEGER,
-                required=False
-            ),
-            openapi.Parameter(
-                'page_size',
-                openapi.IN_QUERY,
-                description="Number of items per page",
-                type=openapi.TYPE_INTEGER,
-                required=False
-            ),
-        ]
-    )
+    def is_admin_user(self, user):
+        """Check if user is admin (either is_staff or username is 'admin')"""
+        return user.is_staff or user.user_name == "admin"
+
+    def get_remaining_questions(self, user):
+        """Get the number of questions the user can still create today"""
+        if self.is_admin_user(user):  # Admin users have no limit
+            return "unlimited"
+        
+        today = timezone.now().date()
+        questions_today = Question.objects.filter(
+            user=user,
+            created_at__date=today
+        ).count()
+        
+        return max(0, 5 - questions_today)
+
+    def create(self, request, *args, **kwargs):
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            
+            # Get the created question
+            question = serializer.instance
+            
+            # Get remaining questions count
+            remaining = "unlimited" if self.is_admin_user(request.user) else self.get_remaining_questions(request.user)
+            
+            headers = self.get_success_headers(serializer.data)
+            return Response({
+                **serializer.data,
+                'remaining_questions': remaining
+            }, status=status.HTTP_201_CREATED, headers=headers)
+        except serializers.ValidationError as e:
+            if isinstance(e.detail, dict) and 'error' in e.detail:
+                return Response(e.detail, status=status.HTTP_403_FORBIDDEN)
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+
     def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            response = self.get_paginated_response(serializer.data)
+            # Add remaining questions count for authenticated users
+            if request.user.is_authenticated:
+                response.data['remaining_questions'] = "unlimited" if self.is_admin_user(request.user) else self.get_remaining_questions(request.user)
+            return response
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
     def get_queryset(self):
-        """
-        Return filtered questions based on search parameters.
-        """
         queryset = Question.objects.all()
         
-        # Get search parameters
+        # Filter by topic
         topic = self.request.query_params.get('topic', None)
-        type = self.request.query_params.get('type', None)
-        tag = self.request.query_params.get('tag', None)
-        search = self.request.query_params.get('search', None)
-        is_active = self.request.query_params.get('is_active', None)
-
-        # Apply filters if parameters are provided
         if topic:
             queryset = queryset.filter(question_topic__icontains=topic)
         
-        if type:
-            queryset = queryset.filter(question_type__icontains=type)
+        # Filter by type
+        question_type = self.request.query_params.get('type', None)
+        if question_type:
+            queryset = queryset.filter(question_type__icontains=question_type)
         
+        # Filter by tag
+        tag = self.request.query_params.get('tag', None)
         if tag:
             queryset = queryset.filter(question_tag__icontains=tag)
         
+        # Filter by search term (searches in description and topic)
+        search = self.request.query_params.get('search', None)
         if search:
             queryset = queryset.filter(
-                Q(question_topic__icontains=search) |
                 Q(question_description__icontains=search) |
-                Q(question_type__icontains=search) |
-                Q(question_tag__icontains=search)
+                Q(question_topic__icontains=search)
             )
         
+        # Filter by active status
+        is_active = self.request.query_params.get('is_active', None)
         if is_active is not None:
-            is_active = is_active.lower() == 'true'
-            queryset = queryset.filter(is_active=is_active)
-
-        return queryset.order_by('-created_at')  # Order by newest first
+            queryset = queryset.filter(is_active=is_active.lower() == 'true')
+        
+        # Order by newest first
+        return queryset.order_by('-created_at')
 
     def get_permissions(self):
-        """
-        Set permissions based on the action.
-        """
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [permissions.IsAuthenticated()]
-        return [permissions.AllowAny()]
-
-    def create(self, request, *args, **kwargs):
-        """
-        Create a new question.
-        Only admin users can create questions.
-        """
-        if not request.user.is_authenticated or request.user.user_name != "admin":
-            return Response(
-                {"detail": "Only admin users can create questions."},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        return super().create(request, *args, **kwargs)
+            return [IsAuthenticated()]
+        return [AllowAny()]
 
     def update(self, request, *args, **kwargs):
         """
@@ -616,17 +645,80 @@ class ResolveQuestionView(APIView):
     """
     Resolve a question and distribute winnings.
     """
+    permission_classes = [IsAuthenticated]
+
     def post(self, request, pk):
+        # Check if user is admin
+        if not request.user.is_authenticated or request.user.user_name != "admin":
+            return Response(
+                {"error": "Only admin users can resolve questions."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         question = get_object_or_404(Question, pk=pk)
         winning_option_id = request.data.get('winning_option_id')
+        
         if not winning_option_id:
-            return Response({"error": "Winning option ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Winning option ID is required."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         try:
+            # Get the winning option
+            winning_option = question.options.get(pk=winning_option_id)
+            losing_option = question.options.exclude(pk=winning_option_id).first()
+            
+            # Calculate total volumes
+            winning_volume = winning_option.option_volume
+            losing_volume = losing_option.option_volume
+            
+            # Resolve the question
             question.resolve_question(winning_option_id)
-            return Response({"message": "Question resolved successfully."}, status=status.HTTP_200_OK)
+            
+            # Get all transactions for this question
+            transactions = TransactionHistory.objects.filter(
+                question=question,
+                transaction_type__in=['WIN', 'LOSS']
+            ).order_by('-date', '-time')
+            
+            # Prepare response data
+            response_data = {
+                "message": "Question resolved successfully.",
+                "question_id": question.question_id,
+                "winning_option": {
+                    "id": winning_option.option_id,
+                    "description": winning_option.description,
+                    "volume": float(winning_volume)
+                },
+                "losing_option": {
+                    "id": losing_option.option_id,
+                    "description": losing_option.description,
+                    "volume": float(losing_volume)
+                },
+                "transactions": [{
+                    "transaction_id": t.transaction_id,
+                    "user_id": t.user.id,
+                    "user_name": t.user.user_name,
+                    "amount": float(t.amount),
+                    "type": t.transaction_type,
+                    "date": t.date,
+                    "time": t.time
+                } for t in transactions]
+            }
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Option.DoesNotExist:
+            return Response(
+                {"error": "Invalid winning option ID."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 class PlaceBetView(APIView):
     permission_classes = [IsAuthenticated]
@@ -810,101 +902,187 @@ class SiteBalanceView(APIView):
 
         return Response({"message": "Site balance updated successfully"}, status=status.HTTP_200_OK)
 
+class NewsViewSet(viewsets.ModelViewSet):
+    queryset = News.objects.all()
+    serializer_class = NewsSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        queryset = News.objects.all()
+        
+        # Filter by topic
+        topic = self.request.query_params.get('topic', None)
+        if topic:
+            queryset = queryset.filter(news_topic=topic)
+            
+        # Filter by type
+        news_type = self.request.query_params.get('type', None)
+        if news_type:
+            queryset = queryset.filter(news_type=news_type)
+            
+        # Filter by tag
+        tag = self.request.query_params.get('tag', None)
+        if tag:
+            queryset = queryset.filter(news_tag=tag)
+            
+        # Search in description
+        search = self.request.query_params.get('search', None)
+        if search:
+            queryset = queryset.filter(news_description__icontains=search)
+            
+        return queryset.order_by('-created_at')
+
+    def perform_create(self, serializer):
+        serializer.save()
+
 class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
-        if getattr(self, 'swagger_fake_view', False):
-            return Task.objects.none()
-        return Task.objects.all()
-
-    @action(detail=False, methods=['post'])
-    def complete_task(self, request):
-        """
-        Mark a task as completed and add the amount to user's total balance
-        """
-        serializer = TaskCompletionSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        queryset = Task.objects.all()
+        task_topic = self.request.query_params.get('task_topic', None)
+        task_type = self.request.query_params.get('task_type', None)
+        task_tag = self.request.query_params.get('task_tag', None)
         
-        task_id = serializer.validated_data['task_id']
-        try:
-            task = Task.objects.get(task_id=task_id)
-        except Task.DoesNotExist:
-            return Response(
-                {"detail": "Task not found."},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        if task.is_completed:
-            return Response(
-                {"detail": "Task is already completed."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if task.complete_task(request.user):
-            return Response({
-                "detail": "Task completed successfully.",
-                "amount_added": task.amount,
-                "new_balance": request.user.total_balance
-            }, status=status.HTTP_200_OK)
-        
-        return Response(
-            {"detail": "Failed to complete task."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-class NewsPagination(PageNumberPagination):
-    page_size = 5
-    page_size_query_param = 'page_size'
-    max_page_size = 100
-
-class NewsViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for viewing and editing news articles.
-    """
-    queryset = News.objects.all()
-    serializer_class = NewsSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-    http_method_names = ['get', 'post', 'put', 'delete']  # Remove patch from allowed methods
-    pagination_class = NewsPagination
+        if task_topic:
+            queryset = queryset.filter(task_topic=task_topic)
+        if task_type:
+            queryset = queryset.filter(task_type=task_type)
+        if task_tag:
+            queryset = queryset.filter(task_tag=task_tag)
+            
+        return queryset
 
     def create(self, request, *args, **kwargs):
-        """
-        Create a new news article.
-        Only admin users can create news articles.
-        """
+        # Check if user is admin
         if request.user.user_name != "admin":
             return Response(
-                {"detail": "Only admin users can create news articles."},
+                {'error': 'Only admin users can create tasks.'}, 
                 status=status.HTTP_403_FORBIDDEN
             )
         return super().create(request, *args, **kwargs)
 
-    def update(self, request, *args, **kwargs):
-        """
-        Update a news article.
-        Only admin users can update news articles.
-        Partial updates are allowed.
-        """
-        if request.user.user_name != "admin":
+    @action(detail=False, methods=['post'], url_path='complete_task')
+    def complete_task(self, request):
+        user = request.user
+        task_id = request.data.get('task_id')
+        
+        if not task_id:
             return Response(
-                {"detail": "Only admin users can update news articles."},
-                status=status.HTTP_403_FORBIDDEN
+                {'error': 'task_id is required.'}, 
+                status=status.HTTP_400_BAD_REQUEST
             )
-        partial = True  # Always allow partial updates
-        return super().update(request, *args, **kwargs)
+            
+        try:
+            task = Task.objects.get(pk=task_id)
+        except Task.DoesNotExist:
+            return Response(
+                {'error': 'Task not found.'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-    def destroy(self, request, *args, **kwargs):
-        """
-        Delete a news article.
-        Only admin users can delete news articles.
-        """
-        if request.user.user_name != "admin":
+        # Check if user has already completed this task
+        if TransactionHistory.objects.filter(
+            user=user,
+            task=task,
+            transaction_type='TASK_REWARD'
+        ).exists():
             return Response(
-                {"detail": "Only admin users can delete news articles."},
-                status=status.HTTP_403_FORBIDDEN
+                {'error': 'You have already completed this task.'}, 
+                status=status.HTTP_400_BAD_REQUEST
             )
-        return super().destroy(request, *args, **kwargs)
+
+        # Add the amount to the user's balance
+        task.complete_task(user)
+
+        # Create a transaction history record
+        transaction = TransactionHistory.objects.create(
+            task=task,
+            amount=task.amount,
+            user=user,
+            transaction_type='TASK_REWARD'
+        )
+
+        return Response({
+            'message': 'Task completed successfully.',
+            'new_balance': user.total_balance,
+            'task_id': task_id,
+            'amount': float(task.amount),
+            'transaction': {
+                'transaction_id': transaction.transaction_id,
+                'amount': float(transaction.amount),
+                'date': transaction.date,
+                'type': transaction.transaction_type
+            }
+        }, status=status.HTTP_200_OK)
+
+class ProfileUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    @swagger_auto_schema(
+        operation_description="Update user profile",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'user_name': openapi.Schema(type=openapi.TYPE_STRING, description='New username'),
+                'bio': openapi.Schema(type=openapi.TYPE_STRING, description='User biography'),
+                'job': openapi.Schema(type=openapi.TYPE_STRING, description='User job'),
+                'location': openapi.Schema(type=openapi.TYPE_STRING, description='User location'),
+                'favorite_subject': openapi.Schema(type=openapi.TYPE_STRING, description='User favorite subject'),
+                'avatar': openapi.Schema(type=openapi.TYPE_FILE, description='User avatar image'),
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Profile updated successfully",
+                schema=ProfileSerializer()
+            ),
+            400: "Bad Request",
+            401: "Unauthorized",
+            409: "Username already exists"
+        }
+    )
+    def put(self, request):
+        try:
+            user = request.user
+            profile = user.profile
+
+            # Handle username update
+            new_username = request.data.get('user_name')
+            if new_username and new_username != user.user_name:
+                # Check if username already exists (excluding current user)
+                if User.objects.filter(user_name=new_username).exclude(id=user.id).exists():
+                    return Response(
+                        {"error": "This username is already taken"},
+                        status=status.HTTP_409_CONFLICT
+                    )
+                user.user_name = new_username
+                user.save()
+
+            # Update profile fields
+            profile.bio = request.data.get('bio', profile.bio)
+            profile.job = request.data.get('job', profile.job)
+            profile.location = request.data.get('location', profile.location)
+            profile.favorite_subject = request.data.get('favorite_subject', profile.favorite_subject)
+
+            # Handle avatar update
+            if 'avatar' in request.FILES:
+                profile.avatar = request.FILES['avatar']
+
+            profile.save()
+
+            serializer = ProfileSerializer(profile)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
     

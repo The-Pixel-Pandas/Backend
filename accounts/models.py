@@ -15,6 +15,7 @@ from decimal import Decimal
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from decimal import Decimal
+from django.db import transaction
 
 
 
@@ -170,11 +171,12 @@ class Medal(models.Model):
 # TransactionHistory Model
 class TransactionHistory(models.Model):
     transaction_id = models.AutoField(primary_key=True)
-    question = models.ForeignKey('Question', on_delete=models.CASCADE)
+    question = models.ForeignKey('Question', on_delete=models.CASCADE, null=True, blank=True)
+    task = models.ForeignKey('Task', on_delete=models.CASCADE, null=True, blank=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     time = models.TimeField(auto_now_add=True)
     date = models.DateField(auto_now_add=True)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, to_field='id')  # Referencing 'user_id'
+    user = models.ForeignKey(User, on_delete=models.CASCADE, to_field='id')
     option = models.ForeignKey('Option', on_delete=models.SET_NULL, null=True, blank=True)
     transaction_type = models.CharField(
         choices=[
@@ -182,6 +184,7 @@ class TransactionHistory(models.Model):
             ("WIN", "Winning"),
             ("LOSS", "Lost Bet"),
             ("BALANCE_UPDATE", "Balance Update"),
+            ("TASK_REWARD", "Task Reward"),
         ],
         default="BET",
         max_length=20,
@@ -194,6 +197,7 @@ class TransactionHistory(models.Model):
 
 class Question(models.Model):
     question_id = models.AutoField(primary_key=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='questions', null=True, blank=True)
     question_description = models.TextField()
     question_topic = models.CharField(max_length=100)
     question_type = models.CharField(max_length=50)
@@ -204,7 +208,8 @@ class Question(models.Model):
     end_time = models.DateTimeField(default=now)
     is_active = models.BooleanField(default=True)
     winning_option = models.ForeignKey('Option', on_delete=models.SET_NULL, null=True, blank=True, related_name='winning_questions')
-    image = models.ImageField(upload_to='questions/', null=True, blank=True)  # Store image files
+    image = models.ImageField(upload_to='questions/', null=True, blank=True)  # For file uploads
+    image_base64 = models.TextField(null=True, blank=True)  # For base64 strings
 
     def __str__(self):
         return self.question_topic
@@ -268,55 +273,54 @@ class Question(models.Model):
         Resolve the question by distributing winnings to users who bet on the winning option.
         The total volume of the losing option is distributed among winners based on their share.
         """
-        if not self.validate_question():
-            return
-
+        # Get the winning and losing options
         winning_option = self.options.get(pk=winning_option_id)
         self.winning_option = winning_option
         
         # Get the losing option
         losing_option = self.options.exclude(pk=winning_option_id).first()
         
-        # Calculate total volume of losing option
+        # Calculate total volumes
         losing_volume = losing_option.option_volume
-        
-        # Calculate total volume of winning option
         winning_volume = winning_option.option_volume
         
-        # Distribute winnings to users who bet on the winning option
-        for bet in winning_option.bets.all():
-            # Calculate user's share of the winning option
-            user_share = bet.amount / winning_volume
-            
-            # Calculate winnings (user's share of the losing option's volume)
-            winnings = user_share * losing_volume
-            
-            # Add winnings to user's balance
-            bet.user.total_balance += winnings
-            bet.user.save()
+        # Use database transaction to ensure atomicity
+        with transaction.atomic():
+            # Distribute winnings to users who bet on the winning option
+            for bet in winning_option.bets.all():
+                # Calculate user's share of the winning option
+                user_share = bet.amount / winning_volume
+                
+                # Calculate winnings (user's share of the losing option's volume)
+                winnings = user_share * losing_volume
+                
+                # Add winnings to user's balance
+                user = bet.user
+                user.total_balance += winnings
+                user.save()
 
-            # Record winning transaction
-            TransactionHistory.objects.create(
-                question=self,
-                amount=winnings,  # Positive amount for winning
-                user=bet.user,
-                option=winning_option,
-                transaction_type='WIN'
-            )
+                # Record winning transaction
+                TransactionHistory.objects.create(
+                    question=self,
+                    amount=winnings,  # Positive amount for winning
+                    user=user,
+                    option=winning_option,
+                    transaction_type='WIN'
+                )
 
-        # Record losses for users who bet on the losing option
-        for bet in losing_option.bets.all():
-            TransactionHistory.objects.create(
-                question=self,
-                amount=-bet.amount,  # Negative amount for loss
-                user=bet.user,
-                option=losing_option,
-                transaction_type='LOSS'
-            )
+            # Record losses for users who bet on the losing option
+            for bet in losing_option.bets.all():
+                TransactionHistory.objects.create(
+                    question=self,
+                    amount=-bet.amount,  # Negative amount for loss
+                    user=bet.user,
+                    option=losing_option,
+                    transaction_type='LOSS'
+                )
 
-        # Mark the question as resolved
-        self.is_active = False
-        self.save()
+            # Mark the question as resolved
+            self.is_active = False
+            self.save()
 
 class Option(models.Model):
     option_id = models.AutoField(primary_key=True)
@@ -361,6 +365,10 @@ class News(models.Model):
     news_topic = models.CharField(max_length=100)
     news_type = models.CharField(max_length=50)
     news_tag = models.CharField(max_length=50)
+    created_at = models.DateTimeField(default=now)
+    updated_at = models.DateTimeField(auto_now=True)
+    image = models.ImageField(upload_to='news/', null=True, blank=True)  # For file uploads
+    image_base64 = models.TextField(null=True, blank=True)  # For base64 strings
 
     def __str__(self):
         return self.news_topic
@@ -470,31 +478,24 @@ def initialize_question_options(sender, instance, created, **kwargs):
       
 class Task(models.Model):
     task_id = models.AutoField(primary_key=True)
-    title = models.CharField(max_length=200)
-    description = models.TextField()
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
-    created_at = models.DateTimeField(auto_now_add=True)
-    is_completed = models.BooleanField(default=False)
-    completed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='completed_tasks')
-    completed_at = models.DateTimeField(null=True, blank=True)
+    task_description = models.TextField(null=True, blank=True)
+    task_topic = models.CharField(max_length=100, null=True, blank=True)
+    task_type = models.CharField(max_length=50, null=True, blank=True)
+    task_tag = models.CharField(max_length=50, null=True, blank=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # Reward for completing the task
+    created_at = models.DateTimeField(default=now)
+    updated_at = models.DateTimeField(auto_now=True)
+    image = models.ImageField(upload_to='tasks/', null=True, blank=True)  # For file uploads
+    image_base64 = models.TextField(null=True, blank=True)  # For base64 strings
 
     def __str__(self):
-        return self.title
+        return self.task_topic or f"Task {self.task_id}"
 
     def complete_task(self, user):
         """
         Mark a task as completed and add the amount to user's total balance
         """
-        if not self.is_completed:
-            self.is_completed = True
-            self.completed_by = user
-            self.completed_at = timezone.now()
-            self.save()
-
-            # Add the task amount to user's total balance
-            user.total_balance += self.amount
-            user.save()
-
-            return True
-        return False
+        user.total_balance += self.amount
+        user.save()
+        return True
       

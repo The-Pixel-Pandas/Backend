@@ -14,6 +14,8 @@ from rest_framework import serializers
 from .models import SiteBalance
 from .models import Task
 from .models import News
+from django.utils import timezone
+import base64
 
 User = get_user_model()
 
@@ -311,17 +313,24 @@ class LeaderboardResponseSerializer(serializers.Serializer):
         # Get the page number from context
         page = self.context.get('page', 1)
 
-        # Add 'id' to each user in the leaderboard response
-        def add_user_id(data):
+        # Add user profile information to each user in the leaderboard response
+        def add_user_info(data):
             return [
                 {
-                    'id': user.get('id') or user.get('user_id'),  # Include user ID
+                    'id': user.get('id') or user.get('user_id'),
                     'avatar': user.get('avatar'),
                     'username': user.get('username'),
                     'rank': user.get('rank'),
                     'profit': user.get('profit'),
                     'volume': user.get('volume'),
                     'token': user.get('token'),
+                    'bio': user.get('bio', ''),
+                    'medals': user.get('medals', []),
+                    'total_balance': user.get('total_balance'),
+                    'winrate': user.get('winrate', 0),
+                    'job': user.get('job'),
+                    'location': user.get('location'),
+                    'favorite_subject': user.get('favorite_subject', 'Not specified')
                 }
                 for user in data
             ]
@@ -329,16 +338,16 @@ class LeaderboardResponseSerializer(serializers.Serializer):
         # Prepare the response
         return {
             'all_time': {
-                'volume': add_user_id(instance['all_time']['volume']),
-                'profit': add_user_id(instance['all_time']['profit'])
+                'volume': add_user_info(instance['all_time']['volume']),
+                'profit': add_user_info(instance['all_time']['profit'])
             },
             'monthly': {
-                'volume': add_user_id(instance['monthly']['volume']),
-                'profit': add_user_id(instance['monthly']['profit'])
+                'volume': add_user_info(instance['monthly']['volume']),
+                'profit': add_user_info(instance['monthly']['profit'])
             },
             'weekly': {
-                'volume': add_user_id(instance['weekly']['volume']),
-                'profit': add_user_id(instance['weekly']['profit'])
+                'volume': add_user_info(instance['weekly']['volume']),
+                'profit': add_user_info(instance['weekly']['profit'])
             },
             'next': f"http://127.0.0.1:8000/api/leaderboards/?page={page + 1}" if page < 5 else None,
             'previous': f"http://127.0.0.1:8000/api/leaderboards/?page={page - 1}" if page > 1 else None
@@ -347,13 +356,13 @@ class LeaderboardResponseSerializer(serializers.Serializer):
     def get_next(self, obj):
         page = self.context.get('page', 1)
         if page < 4:  # Assuming 4 pages for 6 rankings
-            return f'http://127.0.0.1:8000/api/leaderboards/?page={page + 1}'
+            return f"http://127.0.0.1:8000/api/leaderboards/?page={page + 1}"
         return None
 
     def get_previous(self, obj):
         page = self.context.get('page', 1)
         if page > 1:
-            return f'http://127.0.0.1:8000/api/leaderboards/?page={page - 1}'
+            return f"http://127.0.0.1:8000/api/leaderboards/?page={page - 1}"
         return None
 
     class Meta:
@@ -361,9 +370,19 @@ class LeaderboardResponseSerializer(serializers.Serializer):
 
 
 class TransactionHistorySerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source='user.user_name', read_only=True)
+    question_topic = serializers.CharField(source='question.question_topic', read_only=True)
+    option_description = serializers.CharField(source='option.description', read_only=True)
+    task_title = serializers.CharField(source='task.title', read_only=True)
+
     class Meta:
         model = TransactionHistory
-        fields = ['transaction_id', 'question', 'amount', 'time', 'date', 'user', 'option', 'transaction_type']
+        fields = [
+            'transaction_id', 'question', 'question_topic', 'task', 'task_title',
+            'amount', 'time', 'date', 'user', 'user_name', 'option',
+            'option_description', 'transaction_type'
+        ]
+        read_only_fields = fields
 
 class OptionSerializer(serializers.ModelSerializer):
     question_id = serializers.IntegerField(source='question.question_id', read_only=True)
@@ -386,29 +405,114 @@ class OptionSerializer(serializers.ModelSerializer):
         return option
 
 class QuestionSerializer(serializers.ModelSerializer):
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
     options = OptionSerializer(many=True, read_only=True)
-    winning_option = OptionSerializer(read_only=True)
+    remaining_questions = serializers.SerializerMethodField()
 
     class Meta:
         model = Question
         fields = [
-            'question_id',
-            'question_description',
-            'question_topic',
-            'question_type',
-            'question_tag',
-            'question_volume',
-            'created_at',
-            'updated_at',
-            'end_time',
-            'is_active',
-            'options',
-            'winning_option',
-            'image'
+            'question_id', 'user', 'question_description', 'question_topic',
+            'question_type', 'question_tag', 'question_volume', 'created_at',
+            'updated_at', 'end_time', 'is_active', 'winning_option', 'image',
+            'image_base64', 'options', 'remaining_questions'
         ]
-        read_only_fields = ['question_id', 'created_at', 'updated_at', 'question_volume', 'options', 'winning_option']
+        read_only_fields = ['question_id', 'user', 'question_volume', 'created_at', 'updated_at']
+
+    def is_admin_user(self, user):
+        """Check if user is admin (either is_staff or username is 'admin')"""
+        return user.is_staff or user.user_name == "admin"
+
+    def get_remaining_questions(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return None
+            
+        if self.is_admin_user(request.user):  # Admin users have no limit
+            return "unlimited"
+            
+        today = timezone.now().date()
+        questions_today = Question.objects.filter(
+            user=request.user,
+            created_at__date=today
+        ).count()
+        
+        return max(0, 5 - questions_today)
 
     def create(self, validated_data):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            raise serializers.ValidationError("User must be authenticated")
+            
+        # Skip all limit checks for admin users
+        if self.is_admin_user(request.user):
+            # Add user to validated data
+            validated_data['user'] = request.user
+            
+            # Handle base64 image if provided
+            image_base64 = validated_data.pop('image_base64', None)
+            if image_base64:
+                import base64
+                from django.core.files.base import ContentFile
+                import uuid
+
+                # Extract the base64 data
+                format, imgstr = image_base64.split(';base64,')
+                ext = format.split('/')[-1]
+                
+                # Generate a unique filename
+                filename = f"{uuid.uuid4()}.{ext}"
+                
+                # Convert base64 to file
+                data = ContentFile(base64.b64decode(imgstr), name=filename)
+                
+                # Create the question with the file
+                validated_data['image'] = data
+            
+            # Create the question
+            question = Question.objects.create(**validated_data)
+            
+            # Initialize options (Yes and No)
+            question.initialize_options()
+            
+            return question
+            
+        # For non-admin users, check the daily limit
+        today = timezone.now().date()
+        questions_today = Question.objects.filter(
+            user=request.user,
+            created_at__date=today
+        ).count()
+        
+        if questions_today >= 5:
+            raise serializers.ValidationError({
+                'error': 'You have reached your daily question limit (5 questions per day)',
+                'remaining_questions': 0
+            })
+        
+        # Handle base64 image if provided
+        image_base64 = validated_data.pop('image_base64', None)
+        if image_base64:
+            import base64
+            from django.core.files.base import ContentFile
+            import uuid
+
+            # Extract the base64 data
+            format, imgstr = image_base64.split(';base64,')
+            ext = format.split('/')[-1]
+            
+            # Generate a unique filename
+            filename = f"{uuid.uuid4()}.{ext}"
+            
+            # Convert base64 to file
+            data = ContentFile(base64.b64decode(imgstr), name=filename)
+            
+            # Create the question with the file
+            validated_data['image'] = data
+
+        # Add user to validated data
+        validated_data['user'] = request.user
+        
         # Create the question
         question = Question.objects.create(**validated_data)
         
@@ -416,13 +520,6 @@ class QuestionSerializer(serializers.ModelSerializer):
         question.initialize_options()
         
         return question
-
-    def to_representation(self, instance):
-        representation = super().to_representation(instance)
-        # Add options to the representation, ensuring only unique options are shown
-        options = instance.options.all().order_by('option_id')
-        representation['options'] = OptionSerializer(options, many=True).data
-        return representation
 
 class BetSerializer(serializers.ModelSerializer):
     class Meta:
@@ -435,21 +532,178 @@ class SiteBalanceSerializer(serializers.ModelSerializer):
         fields = ['balance']    
 
 class TaskSerializer(serializers.ModelSerializer):
+    image_base64 = serializers.CharField(write_only=True, required=False)
+    image_url = serializers.SerializerMethodField()
+    image_base64_response = serializers.SerializerMethodField()
+
     class Meta:
         model = Task
-        fields = ['task_id', 'title', 'description', 'amount', 'created_at', 'is_completed', 'completed_by', 'completed_at']
-        read_only_fields = ['task_id', 'created_at', 'is_completed', 'completed_by', 'completed_at']
+        fields = [
+            'task_id', 'task_description', 'task_topic', 'task_type',
+            'task_tag', 'amount', 'created_at', 'updated_at', 'image_base64',
+            'image_url', 'image_base64_response'
+        ]
+        read_only_fields = ['task_id', 'created_at', 'updated_at']
+
+    def get_image_url(self, obj):
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+
+    def get_image_base64_response(self, obj):
+        if obj.image:
+            try:
+                import base64
+                from django.core.files.storage import default_storage
+                
+                # Read the file using default_storage
+                with default_storage.open(obj.image.name, 'rb') as image_file:
+                    # Read the entire file content
+                    image_data = image_file.read()
+                    # Encode to base64
+                    encoded_string = base64.b64encode(image_data).decode('utf-8')
+                    # Get the file extension
+                    ext = obj.image.name.split('.')[-1].lower()
+                    # Return the complete base64 string
+                    return f"data:image/{ext};base64,{encoded_string}"
+            except Exception as e:
+                print(f"Error encoding image to base64: {str(e)}")
+                return None
+        return None
+
+    def validate_image_base64(self, value):
+        """Validate that the image_base64 is a valid base64 string"""
+        if not value:
+            return value
+            
+        if not value.startswith('data:image/'):
+            raise serializers.ValidationError("Invalid image format. Must be a base64 encoded image string starting with 'data:image/'")
+            
+        try:
+            # Extract the base64 data
+            format, imgstr = value.split(';base64,')
+            # Add padding if necessary
+            padding = 4 - (len(imgstr) % 4)
+            if padding != 4:
+                imgstr += '=' * padding
+            # Try to decode to verify it's valid base64
+            base64.b64decode(imgstr)
+            return value
+        except Exception as e:
+            raise serializers.ValidationError(f"Invalid base64 image data: {str(e)}")
+
+    def create(self, validated_data):
+        # Handle base64 image if provided
+        image_base64 = validated_data.pop('image_base64', None)
+        if image_base64:
+            import base64
+            from django.core.files.base import ContentFile
+            import uuid
+
+            try:
+                # Extract the base64 data
+                format, imgstr = image_base64.split(';base64,')
+                ext = format.split('/')[-1]
+                
+                # Add padding if necessary
+                padding = 4 - (len(imgstr) % 4)
+                if padding != 4:
+                    imgstr += '=' * padding
+                
+                # Decode base64
+                image_data = base64.b64decode(imgstr)
+                
+                # Generate a unique filename
+                filename = f"{uuid.uuid4()}.{ext}"
+                
+                # Convert base64 to file
+                data = ContentFile(image_data, name=filename)
+                
+                # Create the task with the file
+                validated_data['image'] = data
+            except Exception as e:
+                raise serializers.ValidationError(f"Error processing image: {str(e)}")
+
+        # Create the task
+        task = Task.objects.create(**validated_data)
+        return task
 
 class TaskCompletionSerializer(serializers.Serializer):
     task_id = serializers.IntegerField()    
 
 class NewsSerializer(serializers.ModelSerializer):
-    news_description = serializers.CharField(required=False)
-    news_topic = serializers.CharField(required=False)
-    news_type = serializers.CharField(required=False)
-    news_tag = serializers.CharField(required=False)
+    image_base64 = serializers.CharField(write_only=True, required=False)
+    image_url = serializers.SerializerMethodField()
+    image_base64_response = serializers.SerializerMethodField()
 
     class Meta:
         model = News
-        fields = ['news_id', 'news_description', 'news_topic', 'news_type', 'news_tag']
-        read_only_fields = ['news_id']    
+        fields = [
+            'news_id', 'news_description', 'news_topic', 'news_type',
+            'news_tag', 'created_at', 'updated_at', 'image', 'image_base64',
+            'image_url', 'image_base64_response'
+        ]
+        read_only_fields = ['news_id', 'created_at', 'updated_at']
+
+    def get_image_url(self, obj):
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+
+    def get_image_base64_response(self, obj):
+        if obj.image:
+            try:
+                import base64
+                from django.core.files.storage import default_storage
+                
+                # Read the file using default_storage
+                with default_storage.open(obj.image.name, 'rb') as image_file:
+                    # Read the entire file content
+                    image_data = image_file.read()
+                    # Encode to base64
+                    encoded_string = base64.b64encode(image_data).decode('utf-8')
+                    # Get the file extension
+                    ext = obj.image.name.split('.')[-1].lower()
+                    # Return the complete base64 string
+                    return f"data:image/{ext};base64,{encoded_string}"
+            except Exception as e:
+                print(f"Error encoding image to base64: {str(e)}")
+                return None
+        return None
+
+    def validate_image_base64(self, value):
+        """Validate that the image_base64 is a valid base64 string"""
+        if value and not value.startswith('data:image/'):
+            raise serializers.ValidationError("Invalid image format. Must be a base64 encoded image string starting with 'data:image/'")
+        return value
+
+    def create(self, validated_data):
+        # Handle base64 image if provided
+        image_base64 = validated_data.pop('image_base64', None)
+        if image_base64:
+            import base64
+            from django.core.files.base import ContentFile
+            import uuid
+
+            # Extract the base64 data
+            format, imgstr = image_base64.split(';base64,')
+            ext = format.split('/')[-1]
+            
+            # Generate a unique filename
+            filename = f"{uuid.uuid4()}.{ext}"
+            
+            # Convert base64 to file
+            data = ContentFile(base64.b64decode(imgstr), name=filename)
+            
+            # Create the news with the file
+            validated_data['image'] = data
+
+        # Create the news
+        news = News.objects.create(**validated_data)
+        return news    

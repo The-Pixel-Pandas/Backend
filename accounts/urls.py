@@ -4,7 +4,7 @@ from .views import (
     LoginView, SignupView, ProfileViewSet, LeaderboardViewSet, get_csrf_token,
     WalletView, TransactionHistoryView, ResolveQuestionView, PlaceBetView,
     QuestionViewSet, OptionListCreateView, OptionListView, TaskViewSet,
-    NewsViewSet
+    NewsViewSet, ProfileUpdateView
 )
 from .views import SiteBalanceView
 
@@ -21,6 +21,9 @@ urlpatterns = [
 
     # Custom endpoint for updating profiles
     path('profiles/<int:pk>/', ProfileViewSet.as_view({'put': 'update'}), name='profile-update'),
+    
+    # Profile update endpoint for username and other fields
+    path('profile/update/', ProfileUpdateView.as_view(), name='profile-update-view'),
 
     # Authentication endpoints
     path('signup/', SignupView.as_view(), name='signup'),
