@@ -172,9 +172,20 @@ class TransactionHistory(models.Model):
     transaction_id = models.AutoField(primary_key=True)
     question = models.ForeignKey('Question', on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
-    time = models.TimeField()
-    date = models.DateField()
+    time = models.TimeField(auto_now_add=True)
+    date = models.DateField(auto_now_add=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, to_field='id')  # Referencing 'user_id'
+    option = models.ForeignKey('Option', on_delete=models.SET_NULL, null=True, blank=True)
+    transaction_type = models.CharField(
+        choices=[
+            ("BET", "Bet Placed"),
+            ("WIN", "Winning"),
+            ("LOSS", "Lost Bet"),
+            ("BALANCE_UPDATE", "Balance Update"),
+        ],
+        default="BET",
+        max_length=20,
+    )
 
     def __str__(self):
         return f"Transaction {self.transaction_id}"
@@ -283,6 +294,25 @@ class Question(models.Model):
             # Add winnings to user's balance
             bet.user.total_balance += winnings
             bet.user.save()
+
+            # Record winning transaction
+            TransactionHistory.objects.create(
+                question=self,
+                amount=winnings,  # Positive amount for winning
+                user=bet.user,
+                option=winning_option,
+                transaction_type='WIN'
+            )
+
+        # Record losses for users who bet on the losing option
+        for bet in losing_option.bets.all():
+            TransactionHistory.objects.create(
+                question=self,
+                amount=-bet.amount,  # Negative amount for loss
+                user=bet.user,
+                option=losing_option,
+                transaction_type='LOSS'
+            )
 
         # Mark the question as resolved
         self.is_active = False

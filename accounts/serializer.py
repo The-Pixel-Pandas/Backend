@@ -363,7 +363,7 @@ class LeaderboardResponseSerializer(serializers.Serializer):
 class TransactionHistorySerializer(serializers.ModelSerializer):
     class Meta:
         model = TransactionHistory
-        fields = ['transaction_id', 'question', 'amount', 'time', 'date', 'user']
+        fields = ['transaction_id', 'question', 'amount', 'time', 'date', 'user', 'option', 'transaction_type']
 
 class OptionSerializer(serializers.ModelSerializer):
     question_id = serializers.IntegerField(source='question.question_id', read_only=True)

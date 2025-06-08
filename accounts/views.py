@@ -665,6 +665,15 @@ class PlaceBetView(APIView):
                 amount=amount
             )
 
+            # Create transaction history entry with negative amount for bet
+            TransactionHistory.objects.create(
+                question=option.question,
+                amount=-amount,  # Negative amount for bet
+                user=user,
+                option=option,
+                transaction_type='BET'
+            )
+
             # Deduct from user's balance
             user.total_balance -= amount
             user.save()
