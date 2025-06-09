@@ -487,38 +487,45 @@ class TransactionHistoryView(APIView):
     pagination_class = StandardResultsSetPagination
 
     def get(self, request, *args, **kwargs):
-        # Get the transaction history for the authenticated user
-        transactions = TransactionHistory.objects.filter(user=request.user)
-        
-        # Filter by transaction type if provided
-        transaction_type = request.query_params.get('type')
-        if transaction_type:
-            transactions = transactions.filter(transaction_type=transaction_type)
-        
-        # Filter by date range if provided
-        start_date = request.query_params.get('start_date')
-        end_date = request.query_params.get('end_date')
-        if start_date:
-            transactions = transactions.filter(date__gte=start_date)
-        if end_date:
-            transactions = transactions.filter(date__lte=end_date)
-        
-        # Order by most recent first
-        transactions = transactions.order_by('-date', '-time')
-        
-        # Apply pagination
-        paginator = self.pagination_class()
-        paginated_transactions = paginator.paginate_queryset(transactions, request)
-        
-        # Serialize the paginated data with request context
-        serializer = TransactionHistorySerializer(
-            paginated_transactions, 
-            many=True,
-            context={'request': request}
-        )
-        
-        # Return paginated response
-        return paginator.get_paginated_response(serializer.data)
+        try:
+            # Get the transaction history for the authenticated user
+            transactions = TransactionHistory.objects.filter(user=request.user)
+            
+            # Filter by transaction type if provided
+            transaction_type = request.query_params.get('type')
+            if transaction_type:
+                transactions = transactions.filter(transaction_type=transaction_type)
+            
+            # Filter by date range if provided
+            start_date = request.query_params.get('start_date')
+            end_date = request.query_params.get('end_date')
+            if start_date:
+                transactions = transactions.filter(date__gte=start_date)
+            if end_date:
+                transactions = transactions.filter(date__lte=end_date)
+            
+            # Order by most recent first
+            transactions = transactions.order_by('-date', '-time')
+            
+            # Apply pagination
+            paginator = self.pagination_class()
+            paginated_transactions = paginator.paginate_queryset(transactions, request)
+            
+            # Serialize the paginated data with request context
+            serializer = TransactionHistorySerializer(
+                paginated_transactions, 
+                many=True,
+                context={'request': request}
+            )
+            
+            # Return paginated response
+            return paginator.get_paginated_response(serializer.data)
+            
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 class QuestionCreateView(CreateAPIView):
     """
