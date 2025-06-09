@@ -66,6 +66,16 @@ class StandardResultsSetPagination(PageNumberPagination):
     page_size_query_param = 'page_size'
     max_page_size = 100
 
+    def get_paginated_response(self, data):
+        return Response({
+            'count': self.page.paginator.count,
+            'total_pages': self.page.paginator.num_pages,
+            'current_page': self.page.number,
+            'next': self.get_next_link(),
+            'previous': self.get_previous_link(),
+            'results': data
+        })
+
 User = get_user_model()
 
 
@@ -207,7 +217,7 @@ class SignupView(CreateAPIView):
             'is_admin': is_admin  # Add this field to indicate if the user is "admin"
         }, status=status.HTTP_201_CREATED)
     
-class ProfileViewSet(viewsets.GenericViewSet):
+class ProfileViewSet(viewsets.ModelViewSet):
     queryset = Profile.objects.all()
     serializer_class = ProfileSerializer
     permission_classes = [IsAuthenticated]
@@ -258,31 +268,56 @@ class ProfileViewSet(viewsets.GenericViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Handle avatar field if it's in the request
-        if 'avatar' in request.data:
-            try:
-                avatar_value = int(request.data['avatar'])
-                if 1 <= avatar_value <= 8:
-                    request.data['avatar'] = avatar_value
-                else:
+        with transaction.atomic():
+            user = request.user
+
+            # Handle username update
+            new_username = request.data.get('user_name')
+            if new_username and new_username != user.user_name:
+                # Check if username already exists (excluding current user)
+                if User.objects.filter(user_name=new_username).exclude(id=user.id).exists():
                     return Response(
-                        {"avatar": ["Value must be between 1 and 8"]},
+                        {"error": "This username is already taken"},
+                        status=status.HTTP_409_CONFLICT
+                    )
+                user.user_name = new_username
+                user.save()
+
+            # Handle avatar update
+            avatar_value = request.data.get('avatar')
+            if avatar_value is not None:
+                try:
+                    avatar_value = int(avatar_value)
+                    if 1 <= avatar_value <= 8:
+                        profile.avatar = avatar_value
+                        user.avatar = avatar_value
+                        user.save()
+                    else:
+                        return Response(
+                            {"error": "Avatar must be a number between 1 and 8"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                except (ValueError, TypeError):
+                    return Response(
+                        {"error": "Avatar must be a valid number"},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-            except (ValueError, TypeError):
-                return Response(
-                    {"avatar": ["Invalid value. Must be an integer between 1 and 8"]},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
 
-        serializer = self.get_serializer(profile, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-        return Response(serializer.data)
+            # Update other profile fields
+            serializer = self.get_serializer(profile, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            self.perform_update(serializer)
+
+            # Return updated data
+            return Response({
+                **serializer.data,
+                'user_name': user.user_name,
+                'avatar': user.avatar
+            })
 
     def perform_update(self, serializer):
         """Custom logic for updating a profile"""
-        serializer.save()  # Save the updated profile
+        serializer.save()
 
     def destroy(self, request, *args, **kwargs):
         """Delete a specific profile by ID"""
@@ -946,7 +981,11 @@ class NewsViewSet(viewsets.ModelViewSet):
         return queryset.order_by('-created_at')
 
     def perform_create(self, serializer):
-        serializer.save()
+        try:
+            # Save the news with the validated data
+            serializer.save()
+        except Exception as e:
+            raise serializers.ValidationError(f"Error creating news: {str(e)}")
 
 class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.all()
@@ -1063,51 +1102,57 @@ class ProfileUpdateView(APIView):
     )
     def put(self, request):
         try:
-            user = request.user
-            profile = user.profile
+            with transaction.atomic():  # Use transaction to ensure both models are updated
+                user = request.user
+                profile = user.profile
 
-            # Handle username update
-            new_username = request.data.get('user_name')
-            if new_username and new_username != user.user_name:
-                # Check if username already exists (excluding current user)
-                if User.objects.filter(user_name=new_username).exclude(id=user.id).exists():
-                    return Response(
-                        {"error": "This username is already taken"},
-                        status=status.HTTP_409_CONFLICT
-                    )
-                user.user_name = new_username
-                user.save()
-
-            # Update profile fields
-            profile.bio = request.data.get('bio', profile.bio)
-            profile.job = request.data.get('job', profile.job)
-            profile.location = request.data.get('location', profile.location)
-            profile.favorite_subject = request.data.get('favorite_subject', profile.favorite_subject)
-
-            # Handle avatar update
-            avatar_value = request.data.get('avatar')
-            if avatar_value is not None:
-                try:
-                    avatar_value = int(avatar_value)
-                    if 1 <= avatar_value <= 8:
-                        profile.avatar = avatar_value
-                        user.avatar = avatar_value  # Update user's avatar as well
-                        user.save()
-                    else:
+                # Handle username update
+                new_username = request.data.get('user_name')
+                if new_username and new_username != user.user_name:
+                    # Check if username already exists (excluding current user)
+                    if User.objects.filter(user_name=new_username).exclude(id=user.id).exists():
                         return Response(
-                            {"error": "Avatar must be a number between 1 and 8"},
+                            {"error": "This username is already taken"},
+                            status=status.HTTP_409_CONFLICT
+                        )
+                    user.user_name = new_username
+                    user.save()
+
+                # Update profile fields
+                profile.bio = request.data.get('bio', profile.bio)
+                profile.job = request.data.get('job', profile.job)
+                profile.location = request.data.get('location', profile.location)
+                profile.favorite_subject = request.data.get('favorite_subject', profile.favorite_subject)
+
+                # Handle avatar update
+                avatar_value = request.data.get('avatar')
+                if avatar_value is not None:
+                    try:
+                        avatar_value = int(avatar_value)
+                        if 1 <= avatar_value <= 8:
+                            profile.avatar = avatar_value
+                            user.avatar = avatar_value  # Update user's avatar as well
+                            user.save()
+                        else:
+                            return Response(
+                                {"error": "Avatar must be a number between 1 and 8"},
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                    except (ValueError, TypeError):
+                        return Response(
+                            {"error": "Avatar must be a valid number"},
                             status=status.HTTP_400_BAD_REQUEST
                         )
-                except (ValueError, TypeError):
-                    return Response(
-                        {"error": "Avatar must be a valid number"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
 
-            profile.save()
+                profile.save()
 
-            serializer = ProfileSerializer(profile)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+                # Return updated data
+                serializer = ProfileSerializer(profile)
+                return Response({
+                    **serializer.data,
+                    'user_name': user.user_name,  # Include updated username in response
+                    'avatar': user.avatar  # Include updated avatar in response
+                }, status=status.HTTP_200_OK)
 
         except Exception as e:
             return Response(

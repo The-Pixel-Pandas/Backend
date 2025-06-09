@@ -208,7 +208,6 @@ class Question(models.Model):
     end_time = models.DateTimeField(default=now)
     is_active = models.BooleanField(default=True)
     winning_option = models.ForeignKey('Option', on_delete=models.SET_NULL, null=True, blank=True, related_name='winning_questions')
-    image = models.ImageField(upload_to='questions/', null=True, blank=True)  # For file uploads
     image_base64 = models.TextField(null=True, blank=True)  # For base64 strings
 
     def __str__(self):
@@ -362,12 +361,10 @@ class News(models.Model):
     news_tag = models.CharField(max_length=50)
     created_at = models.DateTimeField(default=now)
     updated_at = models.DateTimeField(auto_now=True)
-    image = models.ImageField(upload_to='news/', null=True, blank=True)  # For file uploads
     image_base64 = models.TextField(null=True, blank=True)  # For base64 strings
 
     def __str__(self):
         return self.news_topic
-
 
 # Comment Model
 class Comment(models.Model):
