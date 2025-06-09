@@ -464,6 +464,7 @@ class QuestionSerializer(serializers.ModelSerializer):
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     options = OptionSerializer(many=True, read_only=True)
     remaining_questions = serializers.SerializerMethodField()
+    image_base64 = serializers.CharField(write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = Question
@@ -495,6 +496,37 @@ class QuestionSerializer(serializers.ModelSerializer):
         
         return max(0, 5 - questions_today)
 
+    def validate_image_base64(self, value):
+        if not value:
+            return value
+            
+        try:
+            # Check if the string has the correct format
+            if ';base64,' not in value:
+                raise serializers.ValidationError("Invalid base64 image format. Must include data URI scheme (e.g., 'data:image/jpeg;base64,')")
+            
+            # Split the string to get the format and base64 data
+            format, imgstr = value.split(';base64,')
+            
+            # Validate the format
+            if not format.startswith('data:image/'):
+                raise serializers.ValidationError("Invalid image format. Must be a valid image type (e.g., 'data:image/jpeg')")
+            
+            # Try to decode the base64 string
+            try:
+                import base64
+                # Add padding if necessary
+                padding = 4 - (len(imgstr) % 4)
+                if padding != 4:
+                    imgstr += '=' * padding
+                base64.b64decode(imgstr)
+            except Exception as e:
+                raise serializers.ValidationError(f"Invalid base64 image data: {str(e)}")
+            
+            return value
+        except Exception as e:
+            raise serializers.ValidationError(f"Error processing image: {str(e)}")
+
     def create(self, validated_data):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
@@ -508,22 +540,30 @@ class QuestionSerializer(serializers.ModelSerializer):
             # Handle base64 image if provided
             image_base64 = validated_data.pop('image_base64', None)
             if image_base64:
-                import base64
-                from django.core.files.base import ContentFile
-                import uuid
+                try:
+                    import base64
+                    from django.core.files.base import ContentFile
+                    import uuid
 
-                # Extract the base64 data
-                format, imgstr = image_base64.split(';base64,')
-                ext = format.split('/')[-1]
-                
-                # Generate a unique filename
-                filename = f"{uuid.uuid4()}.{ext}"
-                
-                # Convert base64 to file
-                data = ContentFile(base64.b64decode(imgstr), name=filename)
-                
-                # Create the question with the file
-                validated_data['image'] = data
+                    # Extract the base64 data
+                    format, imgstr = image_base64.split(';base64,')
+                    ext = format.split('/')[-1]
+                    
+                    # Add padding if necessary
+                    padding = 4 - (len(imgstr) % 4)
+                    if padding != 4:
+                        imgstr += '=' * padding
+                    
+                    # Generate a unique filename
+                    filename = f"{uuid.uuid4()}.{ext}"
+                    
+                    # Convert base64 to file
+                    data = ContentFile(base64.b64decode(imgstr), name=filename)
+                    
+                    # Create the question with the file
+                    validated_data['image'] = data
+                except Exception as e:
+                    raise serializers.ValidationError(f"Error processing image: {str(e)}")
             
             # Create the question
             question = Question.objects.create(**validated_data)
@@ -549,22 +589,30 @@ class QuestionSerializer(serializers.ModelSerializer):
         # Handle base64 image if provided
         image_base64 = validated_data.pop('image_base64', None)
         if image_base64:
-            import base64
-            from django.core.files.base import ContentFile
-            import uuid
+            try:
+                import base64
+                from django.core.files.base import ContentFile
+                import uuid
 
-            # Extract the base64 data
-            format, imgstr = image_base64.split(';base64,')
-            ext = format.split('/')[-1]
-            
-            # Generate a unique filename
-            filename = f"{uuid.uuid4()}.{ext}"
-            
-            # Convert base64 to file
-            data = ContentFile(base64.b64decode(imgstr), name=filename)
-            
-            # Create the question with the file
-            validated_data['image'] = data
+                # Extract the base64 data
+                format, imgstr = image_base64.split(';base64,')
+                ext = format.split('/')[-1]
+                
+                # Add padding if necessary
+                padding = 4 - (len(imgstr) % 4)
+                if padding != 4:
+                    imgstr += '=' * padding
+                
+                # Generate a unique filename
+                filename = f"{uuid.uuid4()}.{ext}"
+                
+                # Convert base64 to file
+                data = ContentFile(base64.b64decode(imgstr), name=filename)
+                
+                # Create the question with the file
+                validated_data['image'] = data
+            except Exception as e:
+                raise serializers.ValidationError(f"Error processing image: {str(e)}")
 
         # Add user to validated data
         validated_data['user'] = request.user
