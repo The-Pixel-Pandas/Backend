@@ -4,7 +4,7 @@ from .views import (
     LoginView, SignupView, ProfileViewSet, LeaderboardViewSet, get_csrf_token,
     WalletView, TransactionHistoryView, ResolveQuestionView, PlaceBetView,
     QuestionViewSet, OptionListCreateView, OptionListView, TaskViewSet,
-    NewsViewSet, ProfileUpdateView
+    NewsViewSet, ProfileUpdateView, UpdateUserBalanceView
 )
 from .views import SiteBalanceView
 
@@ -49,4 +49,7 @@ urlpatterns = [
     path('options/<int:pk>/bets/', PlaceBetView.as_view(), name='place-bet'),
     
     path('site-balance/', SiteBalanceView.as_view(), name='site-balance'),
+
+    # User balance update endpoint
+    path('update-balance/', UpdateUserBalanceView.as_view(), name='update-user-balance'),
 ]

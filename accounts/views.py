@@ -438,11 +438,7 @@ class WalletView(APIView):
         except Wallet.DoesNotExist:
             return Response({"detail": "Wallet not found."}, status=404)  # Handle case where wallet doesn't exist
 
-        # Example: Update total_balance dynamically (if needed)
-        wallet.total_balance += 10  # Example logic to update balance
-        wallet.save()
-
-        # Return the updated wallet data
+        # Return the wallet data without modifying the balance
         return Response({
             "user_id": wallet.user_id_fk.id,
             "user_name": wallet.user_id_fk.user_name,
@@ -754,32 +750,44 @@ class PlaceBetView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Create the bet
-            bet = Bet.objects.create(
-                user=user,
-                option=option,
-                amount=amount
-            )
+            # Use transaction to ensure atomicity
+            with transaction.atomic():
+                # Create the bet
+                bet = Bet.objects.create(
+                    user=user,
+                    option=option,
+                    amount=amount
+                )
 
-            # Create transaction history entry with negative amount for bet
-            TransactionHistory.objects.create(
-                question=option.question,
-                amount=-amount,  # Negative amount for bet
-                user=user,
-                option=option,
-                transaction_type='BET'
-            )
+                # Create transaction history entry with negative amount for bet
+                TransactionHistory.objects.create(
+                    question=option.question,
+                    amount=-amount,  # Negative amount for bet
+                    user=user,
+                    option=option,
+                    transaction_type='BET'
+                )
 
-            # Deduct from user's balance
-            user.total_balance -= amount
-            user.save()
+                # Update balances across all models
+                user.total_balance -= amount
+                user.save()
 
-            # Update option volume and question volume
-            option.update_option_volume(amount)
+                # Update wallet balance
+                wallet = Wallet.objects.get(user_id_fk=user)
+                wallet.total_balance = user.total_balance
+                wallet.save()
 
-            # Update chances for all options
-            for opt in option.question.options.all():
-                opt.update_chance(option.question.question_volume)
+                # Update profile balance
+                profile = Profile.objects.get(user=user)
+                profile.total_balance = user.total_balance
+                profile.save()
+
+                # Update option volume and question volume
+                option.update_option_volume(amount)
+
+                # Update chances for all options
+                for opt in option.question.options.all():
+                    opt.update_chance(option.question.question_volume)
 
             return Response({
                 "message": "Bet placed successfully.",
@@ -1029,7 +1037,6 @@ class TaskViewSet(viewsets.ModelViewSet):
 
 class ProfileUpdateView(APIView):
     permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
 
     @swagger_auto_schema(
         operation_description="Update user profile",
@@ -1041,7 +1048,7 @@ class ProfileUpdateView(APIView):
                 'job': openapi.Schema(type=openapi.TYPE_STRING, description='User job'),
                 'location': openapi.Schema(type=openapi.TYPE_STRING, description='User location'),
                 'favorite_subject': openapi.Schema(type=openapi.TYPE_STRING, description='User favorite subject'),
-                'avatar': openapi.Schema(type=openapi.TYPE_FILE, description='User avatar image'),
+                'avatar': openapi.Schema(type=openapi.TYPE_INTEGER, description='User avatar number (1-8)'),
             }
         ),
         responses={
@@ -1078,8 +1085,24 @@ class ProfileUpdateView(APIView):
             profile.favorite_subject = request.data.get('favorite_subject', profile.favorite_subject)
 
             # Handle avatar update
-            if 'avatar' in request.FILES:
-                profile.avatar = request.FILES['avatar']
+            avatar_value = request.data.get('avatar')
+            if avatar_value is not None:
+                try:
+                    avatar_value = int(avatar_value)
+                    if 1 <= avatar_value <= 8:
+                        profile.avatar = avatar_value
+                        user.avatar = avatar_value  # Update user's avatar as well
+                        user.save()
+                    else:
+                        return Response(
+                            {"error": "Avatar must be a number between 1 and 8"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                except (ValueError, TypeError):
+                    return Response(
+                        {"error": "Avatar must be a valid number"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
             profile.save()
 
@@ -1089,6 +1112,100 @@ class ProfileUpdateView(APIView):
         except Exception as e:
             return Response(
                 {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+class UpdateUserBalanceView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Update user's total balance",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'user_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID of the user to update (optional, defaults to current user)'),
+                'amount': openapi.Schema(type=openapi.TYPE_NUMBER, description='Amount to add (positive) or subtract (negative)'),
+            },
+            required=['amount']
+        ),
+        responses={
+            200: "Balance updated successfully",
+            400: "Bad Request",
+            401: "Unauthorized",
+            403: "Forbidden - Can only update own balance unless admin",
+            404: "User not found"
+        }
+    )
+    def post(self, request):
+        user_id = request.data.get('user_id')
+        amount = request.data.get('amount')
+
+        if amount is None:
+            return Response(
+                {"error": "Amount is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            amount = Decimal(str(amount))
+        except (ValueError, TypeError, InvalidOperation):
+            return Response(
+                {"error": "Invalid amount value."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # If no user_id provided, use the current user
+        if not user_id:
+            user = request.user
+        else:
+            try:
+                user = User.objects.get(id=user_id)
+                # Check if user is trying to update someone else's balance
+                if user != request.user and request.user.user_name != "admin":
+                    return Response(
+                        {"error": "You can only update your own balance."},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            except User.DoesNotExist:
+                return Response(
+                    {"error": "User not found."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+        try:
+            with transaction.atomic():
+                # Update user's balance
+                user.total_balance += amount
+                user.save()
+
+                # Update wallet balance
+                wallet = Wallet.objects.get(user_id_fk=user)
+                wallet.total_balance = user.total_balance
+                wallet.save()
+
+                # Update profile balance
+                profile = Profile.objects.get(user=user)
+                profile.total_balance = user.total_balance
+                profile.save()
+
+                # Create transaction history record
+                TransactionHistory.objects.create(
+                    amount=amount,
+                    user=user,
+                    transaction_type='BALANCE_UPDATE'
+                )
+
+                return Response({
+                    "message": "Balance updated successfully",
+                    "user_id": user.id,
+                    "user_name": user.user_name,
+                    "new_balance": float(user.total_balance),
+                    "amount_changed": float(amount)
+                }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {"error": f"Error updating balance: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
     

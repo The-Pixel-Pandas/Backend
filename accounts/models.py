@@ -294,16 +294,11 @@ class Question(models.Model):
                 # Calculate winnings (user's share of the losing option's volume)
                 winnings = user_share * losing_volume
                 
-                # Add winnings to user's balance
-                user = bet.user
-                user.total_balance += winnings
-                user.save()
-
                 # Record winning transaction
                 TransactionHistory.objects.create(
                     question=self,
                     amount=winnings,  # Positive amount for winning
-                    user=user,
+                    user=bet.user,
                     option=winning_option,
                     transaction_type='WIN'
                 )
