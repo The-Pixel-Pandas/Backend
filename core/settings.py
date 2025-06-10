@@ -15,7 +15,7 @@ import os
 from dotenv import load_dotenv
 
 # Load environment variables from .env file based on environment
-ENV = os.getenv('DJANGO_ENV', 'test')  # Default to production if not specified
+ENV = os.getenv('DJANGO_ENV', 'production')  # Default to production if not specified
 env_file = f'.env.{ENV}'
 load_dotenv(env_file)
 
@@ -33,9 +33,7 @@ SECRET_KEY = "django-insecure-v(rq1ogk007#2axhaoa(hri6u%kl1b^v_hrhsn8#ib$q_=1e#q
 DEBUG = True
 
 ALLOWED_HOSTS = [
-    'localhost',
-    '127.0.0.1',
-    'pixel_pandas.liara.run'  # Your deployed domain
+'*'
 ]
 
 

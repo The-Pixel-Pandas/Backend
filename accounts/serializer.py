@@ -464,15 +464,15 @@ class QuestionSerializer(serializers.ModelSerializer):
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     options = OptionSerializer(many=True, read_only=True)
     remaining_questions = serializers.SerializerMethodField()
-    image_base64 = serializers.CharField(write_only=True, required=False, allow_null=True)
+    image_base64 = serializers.CharField(required=False, allow_null=True)
 
     class Meta:
         model = Question
         fields = [
             'question_id', 'user', 'question_description', 'question_topic',
             'question_type', 'question_tag', 'question_volume', 'created_at',
-            'updated_at', 'end_time', 'is_active', 'winning_option', 'image',
-            'image_base64', 'options', 'remaining_questions'
+            'updated_at', 'end_time', 'is_active', 'winning_option', 'image_base64',
+            'options', 'remaining_questions'
         ]
         read_only_fields = ['question_id', 'user', 'question_volume', 'created_at', 'updated_at']
 
@@ -537,34 +537,6 @@ class QuestionSerializer(serializers.ModelSerializer):
             # Add user to validated data
             validated_data['user'] = request.user
             
-            # Handle base64 image if provided
-            image_base64 = validated_data.pop('image_base64', None)
-            if image_base64:
-                try:
-                    import base64
-                    from django.core.files.base import ContentFile
-                    import uuid
-
-                    # Extract the base64 data
-                    format, imgstr = image_base64.split(';base64,')
-                    ext = format.split('/')[-1]
-                    
-                    # Add padding if necessary
-                    padding = 4 - (len(imgstr) % 4)
-                    if padding != 4:
-                        imgstr += '=' * padding
-                    
-                    # Generate a unique filename
-                    filename = f"{uuid.uuid4()}.{ext}"
-                    
-                    # Convert base64 to file
-                    data = ContentFile(base64.b64decode(imgstr), name=filename)
-                    
-                    # Create the question with the file
-                    validated_data['image'] = data
-                except Exception as e:
-                    raise serializers.ValidationError(f"Error processing image: {str(e)}")
-            
             # Create the question
             question = Question.objects.create(**validated_data)
             
@@ -585,34 +557,6 @@ class QuestionSerializer(serializers.ModelSerializer):
                 'error': 'You have reached your daily question limit (5 questions per day)',
                 'remaining_questions': 0
             })
-        
-        # Handle base64 image if provided
-        image_base64 = validated_data.pop('image_base64', None)
-        if image_base64:
-            try:
-                import base64
-                from django.core.files.base import ContentFile
-                import uuid
-
-                # Extract the base64 data
-                format, imgstr = image_base64.split(';base64,')
-                ext = format.split('/')[-1]
-                
-                # Add padding if necessary
-                padding = 4 - (len(imgstr) % 4)
-                if padding != 4:
-                    imgstr += '=' * padding
-                
-                # Generate a unique filename
-                filename = f"{uuid.uuid4()}.{ext}"
-                
-                # Convert base64 to file
-                data = ContentFile(base64.b64decode(imgstr), name=filename)
-                
-                # Create the question with the file
-                validated_data['image'] = data
-            except Exception as e:
-                raise serializers.ValidationError(f"Error processing image: {str(e)}")
 
         # Add user to validated data
         validated_data['user'] = request.user
@@ -636,101 +580,48 @@ class SiteBalanceSerializer(serializers.ModelSerializer):
         fields = ['balance']    
 
 class TaskSerializer(serializers.ModelSerializer):
-    image_base64 = serializers.CharField(write_only=True, required=False)
-    image_url = serializers.SerializerMethodField()
-    image_base64_response = serializers.SerializerMethodField()
+    image_base64 = serializers.CharField(required=False, allow_null=True)
 
     class Meta:
         model = Task
         fields = [
             'task_id', 'task_description', 'task_topic', 'task_type',
-            'task_tag', 'amount', 'created_at', 'updated_at', 'image_base64',
-            'image_url', 'image_base64_response'
+            'task_tag', 'amount', 'created_at', 'updated_at', 'image_base64'
         ]
         read_only_fields = ['task_id', 'created_at', 'updated_at']
 
-    def get_image_url(self, obj):
-        if obj.image:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.image.url)
-            return obj.image.url
-        return None
-
-    def get_image_base64_response(self, obj):
-        if obj.image:
-            try:
-                import base64
-                from django.core.files.storage import default_storage
-                
-                # Read the file using default_storage
-                with default_storage.open(obj.image.name, 'rb') as image_file:
-                    # Read the entire file content
-                    image_data = image_file.read()
-                    # Encode to base64
-                    encoded_string = base64.b64encode(image_data).decode('utf-8')
-                    # Get the file extension
-                    ext = obj.image.name.split('.')[-1].lower()
-                    # Return the complete base64 string
-                    return f"data:image/{ext};base64,{encoded_string}"
-            except Exception as e:
-                print(f"Error encoding image to base64: {str(e)}")
-                return None
-        return None
-
     def validate_image_base64(self, value):
-        """Validate that the image_base64 is a valid base64 string"""
         if not value:
             return value
             
-        if not value.startswith('data:image/'):
-            raise serializers.ValidationError("Invalid image format. Must be a base64 encoded image string starting with 'data:image/'")
-            
         try:
-            # Extract the base64 data
+            # Check if the string has the correct format
+            if ';base64,' not in value:
+                raise serializers.ValidationError("Invalid base64 image format. Must include data URI scheme (e.g., 'data:image/jpeg;base64,')")
+            
+            # Split the string to get the format and base64 data
             format, imgstr = value.split(';base64,')
-            # Add padding if necessary
-            padding = 4 - (len(imgstr) % 4)
-            if padding != 4:
-                imgstr += '=' * padding
-            # Try to decode to verify it's valid base64
-            base64.b64decode(imgstr)
-            return value
-        except Exception as e:
-            raise serializers.ValidationError(f"Invalid base64 image data: {str(e)}")
-
-    def create(self, validated_data):
-        # Handle base64 image if provided
-        image_base64 = validated_data.pop('image_base64', None)
-        if image_base64:
-            import base64
-            from django.core.files.base import ContentFile
-            import uuid
-
+            
+            # Validate the format
+            if not format.startswith('data:image/'):
+                raise serializers.ValidationError("Invalid image format. Must be a valid image type (e.g., 'data:image/jpeg')")
+            
+            # Try to decode the base64 string
             try:
-                # Extract the base64 data
-                format, imgstr = image_base64.split(';base64,')
-                ext = format.split('/')[-1]
-                
+                import base64
                 # Add padding if necessary
                 padding = 4 - (len(imgstr) % 4)
                 if padding != 4:
                     imgstr += '=' * padding
-                
-                # Decode base64
-                image_data = base64.b64decode(imgstr)
-                
-                # Generate a unique filename
-                filename = f"{uuid.uuid4()}.{ext}"
-                
-                # Convert base64 to file
-                data = ContentFile(image_data, name=filename)
-                
-                # Create the task with the file
-                validated_data['image'] = data
+                base64.b64decode(imgstr)
             except Exception as e:
-                raise serializers.ValidationError(f"Error processing image: {str(e)}")
+                raise serializers.ValidationError(f"Invalid base64 image data: {str(e)}")
+            
+            return value
+        except Exception as e:
+            raise serializers.ValidationError(f"Error processing image: {str(e)}")
 
+    def create(self, validated_data):
         # Create the task
         task = Task.objects.create(**validated_data)
         return task
@@ -739,75 +630,48 @@ class TaskCompletionSerializer(serializers.Serializer):
     task_id = serializers.IntegerField()    
 
 class NewsSerializer(serializers.ModelSerializer):
-    image_base64 = serializers.CharField(write_only=True, required=False)
-    image_url = serializers.SerializerMethodField()
-    image_base64_response = serializers.SerializerMethodField()
+    image_base64 = serializers.CharField(required=False, allow_null=True)
 
     class Meta:
         model = News
         fields = [
             'news_id', 'news_description', 'news_topic', 'news_type',
-            'news_tag', 'created_at', 'updated_at', 'image', 'image_base64',
-            'image_url', 'image_base64_response'
+            'news_tag', 'created_at', 'updated_at', 'image_base64'
         ]
         read_only_fields = ['news_id', 'created_at', 'updated_at']
 
-    def get_image_url(self, obj):
-        if obj.image:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.image.url)
-            return obj.image.url
-        return None
-
-    def get_image_base64_response(self, obj):
-        if obj.image:
+    def validate_image_base64(self, value):
+        if not value:
+            return value
+            
+        try:
+            # Check if the string has the correct format
+            if ';base64,' not in value:
+                raise serializers.ValidationError("Invalid base64 image format. Must include data URI scheme (e.g., 'data:image/jpeg;base64,')")
+            
+            # Split the string to get the format and base64 data
+            format, imgstr = value.split(';base64,')
+            
+            # Validate the format
+            if not format.startswith('data:image/'):
+                raise serializers.ValidationError("Invalid image format. Must be a valid image type (e.g., 'data:image/jpeg')")
+            
+            # Try to decode the base64 string
             try:
                 import base64
-                from django.core.files.storage import default_storage
-                
-                # Read the file using default_storage
-                with default_storage.open(obj.image.name, 'rb') as image_file:
-                    # Read the entire file content
-                    image_data = image_file.read()
-                    # Encode to base64
-                    encoded_string = base64.b64encode(image_data).decode('utf-8')
-                    # Get the file extension
-                    ext = obj.image.name.split('.')[-1].lower()
-                    # Return the complete base64 string
-                    return f"data:image/{ext};base64,{encoded_string}"
+                # Add padding if necessary
+                padding = 4 - (len(imgstr) % 4)
+                if padding != 4:
+                    imgstr += '=' * padding
+                base64.b64decode(imgstr)
             except Exception as e:
-                print(f"Error encoding image to base64: {str(e)}")
-                return None
-        return None
-
-    def validate_image_base64(self, value):
-        """Validate that the image_base64 is a valid base64 string"""
-        if value and not value.startswith('data:image/'):
-            raise serializers.ValidationError("Invalid image format. Must be a base64 encoded image string starting with 'data:image/'")
-        return value
+                raise serializers.ValidationError(f"Invalid base64 image data: {str(e)}")
+            
+            return value
+        except Exception as e:
+            raise serializers.ValidationError(f"Error processing image: {str(e)}")
 
     def create(self, validated_data):
-        # Handle base64 image if provided
-        image_base64 = validated_data.pop('image_base64', None)
-        if image_base64:
-            import base64
-            from django.core.files.base import ContentFile
-            import uuid
-
-            # Extract the base64 data
-            format, imgstr = image_base64.split(';base64,')
-            ext = format.split('/')[-1]
-            
-            # Generate a unique filename
-            filename = f"{uuid.uuid4()}.{ext}"
-            
-            # Convert base64 to file
-            data = ContentFile(base64.b64decode(imgstr), name=filename)
-            
-            # Create the news with the file
-            validated_data['image'] = data
-
         # Create the news
         news = News.objects.create(**validated_data)
         return news    
