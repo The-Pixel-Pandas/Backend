@@ -3,17 +3,14 @@ from django.db import models
 from django.utils import timezone
 from django.db.models import Q
 from django.db.models import Count, Sum
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, Abs
 from django.db.models import F, ExpressionWrapper, DecimalField
 from django.db.models import Case, When, Value, IntegerField
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from decimal import Decimal
 from django.db import models
 from django.utils.timezone import now
-from decimal import Decimal
-from django.db.models.signals import post_save
-from django.dispatch import receiver
 from decimal import Decimal
 from django.db import transaction
 
@@ -192,6 +189,42 @@ class TransactionHistory(models.Model):
 
     def __str__(self):
         return f"Transaction {self.transaction_id}"
+
+# --- NEW CODE: Keep profile metrics in sync with transactions ---
+
+@receiver(post_save, sender=TransactionHistory)
+def update_profile_on_transaction_save(sender, instance, **kwargs):
+    """Update the related Profile's volume (total bets) and profit (total wins)."""
+    user = instance.user
+    try:
+        profile = user.profile  # OneToOne relation
+    except Profile.DoesNotExist:
+        return  # No profile to update
+
+    # Calculate total volume as absolute sum of BET amounts
+    total_volume = (
+        TransactionHistory.objects.filter(user=user, transaction_type='BET')
+        .aggregate(total=Sum(Abs('amount')))
+        .get('total')
+    ) or Decimal('0')
+
+    # Calculate total profit as absolute sum of WIN amounts
+    total_profit = (
+        TransactionHistory.objects.filter(user=user, transaction_type='WIN')
+        .aggregate(total=Sum(Abs('amount')))
+        .get('total')
+    ) or Decimal('0')
+
+    # Ensure non-negative values
+    profile.volume = max(total_volume, Decimal('0'))
+    profile.profit = max(total_profit, Decimal('0'))
+    profile.save()
+
+
+@receiver(post_delete, sender=TransactionHistory)
+def update_profile_on_transaction_delete(sender, instance, **kwargs):
+    """Ensure profile metrics stay correct when a transaction is removed."""
+    update_profile_on_transaction_save(sender, instance)
     
 # Question Model
 

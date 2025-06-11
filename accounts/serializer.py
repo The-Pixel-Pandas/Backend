@@ -524,17 +524,58 @@ class CommentSerializer(serializers.ModelSerializer):
     is_liked = serializers.SerializerMethodField()
     question = serializers.PrimaryKeyRelatedField(read_only=True)  # Make question read-only
     
-    # Add profile fields
+    # Profile fields
     volume = serializers.DecimalField(source='user.profile.volume', max_digits=10, decimal_places=2, read_only=True)
     profit = serializers.DecimalField(source='user.profile.profit', max_digits=10, decimal_places=2, read_only=True)
     bio = serializers.CharField(source='user.profile.bio', read_only=True)
-    rank_total_profit = serializers.IntegerField(source='user.profile.rank_total_profit', read_only=True)
-    rank_total_volume = serializers.IntegerField(source='user.profile.rank_total_volume', read_only=True)
-    rank_monthly_profit = serializers.IntegerField(source='user.profile.rank_monthly_profit', read_only=True)
-    rank_monthly_volume = serializers.IntegerField(source='user.profile.rank_monthly_volume', read_only=True)
-    rank_weekly_profit = serializers.IntegerField(source='user.profile.rank_weekly_profit', read_only=True)
-    rank_weekly_volume = serializers.IntegerField(source='user.profile.rank_weekly_volume', read_only=True)
+    
+    # Dynamic rank fields
+    rank_total_profit = serializers.SerializerMethodField()
+    rank_total_volume = serializers.SerializerMethodField()
+    rank_monthly_profit = serializers.SerializerMethodField()
+    rank_monthly_volume = serializers.SerializerMethodField()
+    rank_weekly_profit = serializers.SerializerMethodField()
+    rank_weekly_volume = serializers.SerializerMethodField()
+    
     medals = serializers.JSONField(source='user.profile.medals', read_only=True)
+    avatar = serializers.IntegerField(source='user.avatar', read_only=True)
+    
+    def _get_rank(self, user, category):
+        """Helper method to get rank for a specific category"""
+        if user is None:
+            return 0
+            
+        if 'profit' in category:
+            field = 'total_balance'
+        else:  # volume
+            field = 'wallet_field'
+            
+        # Get all users with non-zero balance/volume
+        users = User.objects.filter(**{f'{field}__gt': 0}).order_by(f'-{field}')
+        
+        # Find the user's position (1-based index)
+        for rank, u in enumerate(users, 1):
+            if u.id == user.id:
+                return rank
+        return 0
+    
+    def get_rank_total_profit(self, obj):
+        return self._get_rank(obj.user, 'all_time_profit')
+        
+    def get_rank_total_volume(self, obj):
+        return self._get_rank(obj.user, 'all_time_volume')
+        
+    def get_rank_monthly_profit(self, obj):
+        return self._get_rank(obj.user, 'monthly_profit')
+        
+    def get_rank_monthly_volume(self, obj):
+        return self._get_rank(obj.user, 'monthly_volume')
+        
+    def get_rank_weekly_profit(self, obj):
+        return self._get_rank(obj.user, 'weekly_profit')
+        
+    def get_rank_weekly_volume(self, obj):
+        return self._get_rank(obj.user, 'weekly_volume')
 
     class Meta:
         model = Comment
@@ -542,7 +583,7 @@ class CommentSerializer(serializers.ModelSerializer):
                  'created_at', 'updated_at', 'like_count', 'is_liked',
                  'volume', 'profit', 'bio', 'rank_total_profit', 'rank_total_volume',
                  'rank_monthly_profit', 'rank_monthly_volume', 'rank_weekly_profit',
-                 'rank_weekly_volume', 'medals']
+                 'rank_weekly_volume', 'medals', 'avatar']
         read_only_fields = ['comment_id', 'user', 'created_at', 'updated_at']
 
     def get_like_count(self, obj):
@@ -564,13 +605,8 @@ class CommentSerializer(serializers.ModelSerializer):
         data['volume'] = data.get('volume', '0.00')
         data['profit'] = data.get('profit', '0.00')
         data['bio'] = data.get('bio', '')
-        data['rank_total_profit'] = data.get('rank_total_profit', 0)
-        data['rank_total_volume'] = data.get('rank_total_volume', 0)
-        data['rank_monthly_profit'] = data.get('rank_monthly_profit', 0)
-        data['rank_monthly_volume'] = data.get('rank_monthly_volume', 0)
-        data['rank_weekly_profit'] = data.get('rank_weekly_profit', 0)
-        data['rank_weekly_volume'] = data.get('rank_weekly_volume', 0)
         data['medals'] = data.get('medals', [])
+        data['avatar'] = data.get('avatar', None)
         return data
 
 class BetSerializer(serializers.ModelSerializer):
@@ -698,6 +734,7 @@ class NewsCommentSerializer(serializers.ModelSerializer):
     rank_weekly_profit = serializers.SerializerMethodField()
     rank_weekly_volume = serializers.SerializerMethodField()
     medals = serializers.SerializerMethodField()
+    avatar = serializers.SerializerMethodField()
 
     class Meta:
         model = NewsComment
@@ -708,10 +745,29 @@ class NewsCommentSerializer(serializers.ModelSerializer):
             'rank_total_profit', 'rank_total_volume',
             'rank_monthly_profit', 'rank_monthly_volume', 
             'rank_weekly_profit', 'rank_weekly_volume', 
-            'medals'
+            'medals', 'avatar'
         ]
         read_only_fields = ['comment_id', 'news', 'user', 'created_at', 'updated_at']
 
+    def _get_rank(self, user, category):
+        """Helper method to get rank for a specific category"""
+        if user is None:
+            return 0
+            
+        if 'profit' in category:
+            field = 'total_balance'
+        else:  # volume
+            field = 'wallet_field'
+            
+        # Get all users with non-zero balance/volume
+        users = User.objects.filter(**{f'{field}__gt': 0}).order_by(f'-{field}')
+        
+        # Find the user's position (1-based index)
+        for rank, u in enumerate(users, 1):
+            if u.id == user.id:
+                return rank
+        return 0
+        
     def get_user_name(self, obj):
         return obj.user.user_name
 
@@ -739,25 +795,31 @@ class NewsCommentSerializer(serializers.ModelSerializer):
             return ""
 
     def get_rank_total_profit(self, obj):
-        return self._get_user_profile_attr(obj, 'rank_total_profit')
-
+        return self._get_rank(obj.user, 'all_time_profit')
+        
     def get_rank_total_volume(self, obj):
-        return self._get_user_profile_attr(obj, 'rank_total_volume')
-
+        return self._get_rank(obj.user, 'all_time_volume')
+        
     def get_rank_monthly_profit(self, obj):
-        return self._get_user_profile_attr(obj, 'rank_monthly_profit')
-
+        return self._get_rank(obj.user, 'monthly_profit')
+        
     def get_rank_monthly_volume(self, obj):
-        return self._get_user_profile_attr(obj, 'rank_monthly_volume')
-
+        return self._get_rank(obj.user, 'monthly_volume')
+        
     def get_rank_weekly_profit(self, obj):
-        return self._get_user_profile_attr(obj, 'rank_weekly_profit')
-
+        return self._get_rank(obj.user, 'weekly_profit')
+        
     def get_rank_weekly_volume(self, obj):
-        return self._get_user_profile_attr(obj, 'rank_weekly_volume')
+        return self._get_rank(obj.user, 'weekly_volume')
 
     def get_medals(self, obj):
         try:
             return obj.user.profile.medals or []
         except:
             return []
+
+    def get_avatar(self, obj):
+        try:
+            return obj.user.avatar
+        except:
+            return None

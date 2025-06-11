@@ -11,7 +11,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.generics import CreateAPIView
 from rest_framework.pagination import PageNumberPagination
-from django.db.models import Q
+from django.db.models import Q, Sum
+from django.db.models.functions import Abs
 from .models import User, Profile, Wallet, Leaderboard, Task, News, Comment, NewsComment
 from .serializer import UserSerializer, ProfileSerializer, LoginSerializer, LeaderboardSerializer, LeaderboardResponseSerializer, TaskSerializer, TaskCompletionSerializer, NewsSerializer, CommentSerializer, NewsCommentSerializer
 from .utils import get_tokens_for_user
@@ -432,20 +433,39 @@ class WalletView(APIView):
     permission_classes = [IsAuthenticated]  # Ensures only authenticated users can access this view
 
     def get(self, request, *args, **kwargs):
-        # Get the wallet for the authenticated user
-        try:
-            wallet = Wallet.objects.get(user_id_fk=request.user)  # Fetch the wallet linked to the user
-        except Wallet.DoesNotExist:
-            return Response({"detail": "Wallet not found."}, status=404)  # Handle case where wallet doesn't exist
+        # Get the user's balance directly from the User model
+        user = request.user
+        
+        # Calculate volume (total BET amounts) and profit (total WIN amounts)
+        volume = (
+            TransactionHistory.objects.filter(user=user, transaction_type='BET')
+            .aggregate(total=Sum(Abs('amount')))
+            .get('total') or 0
+        )
+        profit = (
+            TransactionHistory.objects.filter(user=user, transaction_type='WIN')
+            .aggregate(total=Sum(Abs('amount')))
+            .get('total') or 0
+        )
+        volume = max(volume, 0)
+        profit = max(profit, 0)
 
-        # Return the wallet data without modifying the balance
+        # Sync profile metrics
+        try:
+            profile = Profile.objects.get(user=user)
+            profile.volume = volume
+            profile.profit = profit
+            profile.save()
+        except Profile.DoesNotExist:
+            pass
+
         return Response({
-            "user_id": wallet.user_id_fk.id,
-            "user_name": wallet.user_id_fk.user_name,
-            "total_balance": wallet.total_balance,
-            "volume": wallet.calculate_volume(),  # Call the method to calculate volume
-            "profit": wallet.calculate_profit()   # Call the method to calculate profit
-        })    
+            "user_id": user.id,
+            "user_name": user.user_name,
+            "total_balance": float(user.total_balance),
+            "volume": float(volume),
+            "profit": float(profit)
+        })
 
 class TransactionHistoryView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1010,9 +1030,22 @@ class TaskViewSet(viewsets.ModelViewSet):
 
         try:
             with transaction.atomic():
-                # Add the amount to the user's balance
-                user.total_balance += task.amount
+                # Get initial balances for logging
+                initial_balance = user.total_balance
+                initial_wallet = user.wallet_field
+                
+                # Calculate new balance
+                new_balance = user.total_balance + task.amount
+
+                # Update user's balance fields
+                user.total_balance = new_balance
+                user.wallet_field = new_balance  # Ensure wallet field matches total balance
                 user.save()
+
+                # Update profile's balance to match user's total_balance
+                profile = Profile.objects.get(user=user)
+                profile.total_balance = new_balance
+                profile.save()
 
                 # Create a transaction history record
                 TransactionHistory.objects.create(
@@ -1022,11 +1055,31 @@ class TaskViewSet(viewsets.ModelViewSet):
                     transaction_type='TASK_REWARD'
                 )
 
+                # Verify final balances
+                final_balance = user.total_balance
+                final_wallet = user.wallet_field
+                final_profile_balance = profile.total_balance
+
+                # Log balance changes for debugging
+                print(f"Task completion balance changes:")
+                print(f"Initial balance: {initial_balance}")
+                print(f"Task amount: {task.amount}")
+                print(f"New balance: {new_balance}")
+                print(f"Final user balance: {final_balance}")
+                print(f"Final wallet: {final_wallet}")
+                print(f"Final profile balance: {final_profile_balance}")
+
                 return Response({
                     'message': 'Task completed successfully.',
-                    'new_balance': float(user.total_balance),
+                    'new_balance': float(new_balance),
                     'task_id': task_id,
-                    'amount': float(task.amount)
+                    'amount': float(task.amount),
+                    'debug_info': {
+                        'initial_balance': float(initial_balance),
+                        'final_balance': float(final_balance),
+                        'final_wallet': float(final_wallet),
+                        'final_profile_balance': float(final_profile_balance)
+                    }
                 }, status=status.HTTP_200_OK)
 
         except Exception as e:
