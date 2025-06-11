@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model, authenticate
 from rest_framework.validators import UniqueValidator
-from .models import Profile, Leaderboard, Task, News, Comment
+from .models import Profile, Leaderboard, Task, News, Comment, NewsComment
 from .utils import get_tokens_for_user
 from rest_framework import serializers
 from .models import Wallet
@@ -681,56 +681,83 @@ class NewsSerializer(serializers.ModelSerializer):
         return news    
     
 class NewsCommentSerializer(serializers.ModelSerializer):
-    user_name = serializers.CharField(source='user.user_name', read_only=True)
-    like_count = serializers.SerializerMethodField()
+    comment_id = serializers.IntegerField(read_only=True)
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    user_name = serializers.SerializerMethodField()
+    like_count = serializers.IntegerField(read_only=True, source='like_number')
     is_liked = serializers.SerializerMethodField()
-    news = serializers.PrimaryKeyRelatedField(read_only=True)
     
-    # Add profile fields
-    volume = serializers.DecimalField(source='user.profile.volume', max_digits=10, decimal_places=2, read_only=True)
-    profit = serializers.DecimalField(source='user.profile.profit', max_digits=10, decimal_places=2, read_only=True)
-    bio = serializers.CharField(source='user.profile.bio', read_only=True)
-    rank_total_profit = serializers.IntegerField(source='user.profile.rank_total_profit', read_only=True)
-    rank_total_volume = serializers.IntegerField(source='user.profile.rank_total_volume', read_only=True)
-    rank_monthly_profit = serializers.IntegerField(source='user.profile.rank_monthly_profit', read_only=True)
-    rank_monthly_volume = serializers.IntegerField(source='user.profile.rank_monthly_volume', read_only=True)
-    rank_weekly_profit = serializers.IntegerField(source='user.profile.rank_weekly_profit', read_only=True)
-    rank_weekly_volume = serializers.IntegerField(source='user.profile.rank_weekly_volume', read_only=True)
-    medals = serializers.JSONField(source='user.profile.medals', read_only=True)
+    # Additional user profile fields
+    volume = serializers.SerializerMethodField()
+    profit = serializers.SerializerMethodField()
+    bio = serializers.SerializerMethodField()
+    rank_total_profit = serializers.SerializerMethodField()
+    rank_total_volume = serializers.SerializerMethodField()
+    rank_monthly_profit = serializers.SerializerMethodField()
+    rank_monthly_volume = serializers.SerializerMethodField()
+    rank_weekly_profit = serializers.SerializerMethodField()
+    rank_weekly_volume = serializers.SerializerMethodField()
+    medals = serializers.SerializerMethodField()
 
     class Meta:
         model = NewsComment
-        fields = ['comment_id', 'news', 'user', 'user_name', 'content', 
-                 'created_at', 'updated_at', 'like_count', 'is_liked',
-                 'volume', 'profit', 'bio', 'rank_total_profit', 'rank_total_volume',
-                 'rank_monthly_profit', 'rank_monthly_volume', 'rank_weekly_profit',
-                 'rank_weekly_volume', 'medals']
-        read_only_fields = ['comment_id', 'user', 'created_at', 'updated_at']
+        fields = [
+            'comment_id', 'news', 'user', 'user_name', 'content', 
+            'created_at', 'updated_at', 'like_count', 'is_liked',
+            'volume', 'profit', 'bio', 
+            'rank_total_profit', 'rank_total_volume',
+            'rank_monthly_profit', 'rank_monthly_volume', 
+            'rank_weekly_profit', 'rank_weekly_volume', 
+            'medals'
+        ]
+        read_only_fields = ['comment_id', 'news', 'user', 'created_at', 'updated_at']
 
-    def get_like_count(self, obj):
-        return obj.like_number
+    def get_user_name(self, obj):
+        return obj.user.user_name
 
     def get_is_liked(self, obj):
-        request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            return obj.likes.filter(id=request.user.id).exists()
-        return False
+        user = self.context['request'].user
+        return obj.likes.filter(id=user.id).exists()
 
-    def create(self, validated_data):
-        validated_data['user'] = self.context['request'].user
-        return super().create(validated_data)
+    def _get_user_profile_attr(self, obj, attr):
+        try:
+            profile = obj.user.profile
+            return getattr(profile, attr, "0.00")
+        except:
+            return "0.00"
 
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        # Set default values if profile fields are None
-        data['volume'] = data.get('volume', '0.00')
-        data['profit'] = data.get('profit', '0.00')
-        data['bio'] = data.get('bio', '')
-        data['rank_total_profit'] = data.get('rank_total_profit', 0)
-        data['rank_total_volume'] = data.get('rank_total_volume', 0)
-        data['rank_monthly_profit'] = data.get('rank_monthly_profit', 0)
-        data['rank_monthly_volume'] = data.get('rank_monthly_volume', 0)
-        data['rank_weekly_profit'] = data.get('rank_weekly_profit', 0)
-        data['rank_weekly_volume'] = data.get('rank_weekly_volume', 0)
-        data['medals'] = data.get('medals', [])
-        return data
+    def get_volume(self, obj):
+        return self._get_user_profile_attr(obj, 'volume')
+
+    def get_profit(self, obj):
+        return self._get_user_profile_attr(obj, 'profit')
+
+    def get_bio(self, obj):
+        try:
+            return obj.user.profile.bio or ""
+        except:
+            return ""
+
+    def get_rank_total_profit(self, obj):
+        return self._get_user_profile_attr(obj, 'rank_total_profit')
+
+    def get_rank_total_volume(self, obj):
+        return self._get_user_profile_attr(obj, 'rank_total_volume')
+
+    def get_rank_monthly_profit(self, obj):
+        return self._get_user_profile_attr(obj, 'rank_monthly_profit')
+
+    def get_rank_monthly_volume(self, obj):
+        return self._get_user_profile_attr(obj, 'rank_monthly_volume')
+
+    def get_rank_weekly_profit(self, obj):
+        return self._get_user_profile_attr(obj, 'rank_weekly_profit')
+
+    def get_rank_weekly_volume(self, obj):
+        return self._get_user_profile_attr(obj, 'rank_weekly_volume')
+
+    def get_medals(self, obj):
+        try:
+            return obj.user.profile.medals or []
+        except:
+            return []

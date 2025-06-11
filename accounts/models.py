@@ -516,13 +516,16 @@ class NewsComment(models.Model):
     news = models.ForeignKey(News, on_delete=models.CASCADE, related_name='comments')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='news_comments')
     content = models.TextField()
-    created_at = models.DateTimeField(default=now)
+    created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     likes = models.ManyToManyField(User, related_name='liked_news_comments', blank=True)
     like_number = models.IntegerField(default=0)
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['news', 'created_at']),
+        ]
 
     def __str__(self):
         return f'Comment by {self.user.user_name} on {self.news.news_topic}'

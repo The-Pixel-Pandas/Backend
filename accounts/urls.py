@@ -20,6 +20,7 @@ router.register(r'questions', QuestionViewSet, basename='question')
 questions_router = routers.NestedDefaultRouter(router, r'questions', lookup='question')
 questions_router.register(r'comments', CommentViewSet, basename='question-comments')
 
+# Nested router for news comments
 news_router = routers.NestedDefaultRouter(router, r'news', lookup='news')
 news_router.register(r'comments', NewsCommentViewSet, basename='news-comments')
 
@@ -27,6 +28,7 @@ urlpatterns = [
     # Include the router URLs directly
     path('', include(router.urls)),  # Profile endpoints like /profiles/ and /profiles/me/
     path('', include(questions_router.urls)),
+    path('', include(news_router.urls)),
 
     # Custom endpoint for updating profiles
     path('profiles/<int:pk>/', ProfileViewSet.as_view({'put': 'update'}), name='profile-update'),
@@ -61,6 +63,4 @@ urlpatterns = [
 
     # User balance update endpoint
     path('update-balance/', UpdateUserBalanceView.as_view(), name='update-user-balance'),
-
-    path('', include(news_router.urls)),
 ]

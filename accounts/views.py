@@ -12,8 +12,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.generics import CreateAPIView
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q
-from .models import User, Profile, Wallet, Leaderboard, Task, News, Comment
-from .serializer import UserSerializer, ProfileSerializer, LoginSerializer, LeaderboardSerializer, LeaderboardResponseSerializer, TaskSerializer, TaskCompletionSerializer, NewsSerializer, CommentSerializer
+from .models import User, Profile, Wallet, Leaderboard, Task, News, Comment, NewsComment
+from .serializer import UserSerializer, ProfileSerializer, LoginSerializer, LeaderboardSerializer, LeaderboardResponseSerializer, TaskSerializer, TaskCompletionSerializer, NewsSerializer, CommentSerializer, NewsCommentSerializer
 from .utils import get_tokens_for_user
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -1242,15 +1242,17 @@ class CommentViewSet(viewsets.ModelViewSet):
 class NewsCommentViewSet(viewsets.ModelViewSet):
     serializer_class = NewsCommentSerializer
     permission_classes = [IsAuthenticated]
-
+    
     def get_queryset(self):
-        news_id = self.kwargs.get('news_pk')
-        return NewsComment.objects.filter(news_id=news_id)
-
+        # Filter comments by news_pk from URL
+        news_pk = self.kwargs.get('news_pk')
+        return NewsComment.objects.filter(news_id=news_pk)
+    
     def perform_create(self, serializer):
-        news_id = self.kwargs.get('news_pk')
-        news = get_object_or_404(News, pk=news_id)
-        serializer.save(news=news)
+        # Automatically set the user to the currently logged-in user
+        news_pk = self.kwargs.get('news_pk')
+        news = News.objects.get(pk=news_pk)
+        serializer.save(user=self.request.user, news=news)
 
     @action(detail=True, methods=['post'])
     def like(self, request, news_pk=None, pk=None):
