@@ -12,8 +12,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.generics import CreateAPIView
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q
-from .models import User, Profile, Wallet, Leaderboard, Task, News
-from .serializer import UserSerializer, ProfileSerializer, LoginSerializer, LeaderboardSerializer, LeaderboardResponseSerializer, TaskSerializer, TaskCompletionSerializer, NewsSerializer
+from .models import User, Profile, Wallet, Leaderboard, Task, News, Comment
+from .serializer import UserSerializer, ProfileSerializer, LoginSerializer, LeaderboardSerializer, LeaderboardResponseSerializer, TaskSerializer, TaskCompletionSerializer, NewsSerializer, CommentSerializer
 from .utils import get_tokens_for_user
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -1208,5 +1208,62 @@ class UpdateUserBalanceView(APIView):
                 {"error": f"Error updating balance: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+class CommentViewSet(viewsets.ModelViewSet):
+    serializer_class = CommentSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        question_id = self.kwargs.get('question_pk')
+        return Comment.objects.filter(question_id=question_id)
+
+    def perform_create(self, serializer):
+        question_id = self.kwargs.get('question_pk')
+        question = get_object_or_404(Question, pk=question_id)
+        serializer.save(question=question)
+
+    @action(detail=True, methods=['post'])
+    def like(self, request, question_pk=None, pk=None):
+        comment = self.get_object()
+        user = request.user
+
+        if comment.likes.filter(id=user.id).exists():
+            comment.likes.remove(user)
+            comment.like_number = comment.likes.count()  # Update like_number
+            comment.save()
+            return Response({'status': 'unliked'})
+        else:
+            comment.likes.add(user)
+            comment.like_number = comment.likes.count()  # Update like_number
+            comment.save()
+            return Response({'status': 'liked'})
     
-    
+
+class NewsCommentViewSet(viewsets.ModelViewSet):
+    serializer_class = NewsCommentSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        news_id = self.kwargs.get('news_pk')
+        return NewsComment.objects.filter(news_id=news_id)
+
+    def perform_create(self, serializer):
+        news_id = self.kwargs.get('news_pk')
+        news = get_object_or_404(News, pk=news_id)
+        serializer.save(news=news)
+
+    @action(detail=True, methods=['post'])
+    def like(self, request, news_pk=None, pk=None):
+        comment = self.get_object()
+        user = request.user
+
+        if comment.likes.filter(id=user.id).exists():
+            comment.likes.remove(user)
+            comment.like_number = comment.likes.count()
+            comment.save()
+            return Response({'status': 'unliked'})
+        else:
+            comment.likes.add(user)
+            comment.like_number = comment.likes.count()
+            comment.save()
+            return Response({'status': 'liked'})

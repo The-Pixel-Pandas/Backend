@@ -1,10 +1,11 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from rest_framework_nested import routers
 from .views import (
     LoginView, SignupView, ProfileViewSet, LeaderboardViewSet, get_csrf_token,
     WalletView, TransactionHistoryView, ResolveQuestionView, PlaceBetView,
     QuestionViewSet, OptionListCreateView, OptionListView, TaskViewSet,
-    NewsViewSet, ProfileUpdateView, UpdateUserBalanceView
+    NewsViewSet, ProfileUpdateView, UpdateUserBalanceView, CommentViewSet ,NewsCommentViewSet
 )
 from .views import SiteBalanceView
 
@@ -15,9 +16,17 @@ router.register(r'tasks', TaskViewSet, basename='task')
 router.register(r'news', NewsViewSet, basename='news')
 router.register(r'questions', QuestionViewSet, basename='question')
 
+# Create a nested router for comments
+questions_router = routers.NestedDefaultRouter(router, r'questions', lookup='question')
+questions_router.register(r'comments', CommentViewSet, basename='question-comments')
+
+news_router = routers.NestedDefaultRouter(router, r'news', lookup='news')
+news_router.register(r'comments', NewsCommentViewSet, basename='news-comments')
+
 urlpatterns = [
     # Include the router URLs directly
     path('', include(router.urls)),  # Profile endpoints like /profiles/ and /profiles/me/
+    path('', include(questions_router.urls)),
 
     # Custom endpoint for updating profiles
     path('profiles/<int:pk>/', ProfileViewSet.as_view({'put': 'update'}), name='profile-update'),
@@ -52,4 +61,6 @@ urlpatterns = [
 
     # User balance update endpoint
     path('update-balance/', UpdateUserBalanceView.as_view(), name='update-user-balance'),
+
+    path('', include(news_router.urls)),
 ]

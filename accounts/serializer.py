@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model, authenticate
 from rest_framework.validators import UniqueValidator
-from .models import Profile, Leaderboard
+from .models import Profile, Leaderboard, Task, News, Comment
 from .utils import get_tokens_for_user
 from rest_framework import serializers
 from .models import Wallet
@@ -518,6 +518,61 @@ class QuestionSerializer(serializers.ModelSerializer):
         
         return question
 
+class CommentSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source='user.user_name', read_only=True)
+    like_count = serializers.SerializerMethodField()
+    is_liked = serializers.SerializerMethodField()
+    question = serializers.PrimaryKeyRelatedField(read_only=True)  # Make question read-only
+    
+    # Add profile fields
+    volume = serializers.DecimalField(source='user.profile.volume', max_digits=10, decimal_places=2, read_only=True)
+    profit = serializers.DecimalField(source='user.profile.profit', max_digits=10, decimal_places=2, read_only=True)
+    bio = serializers.CharField(source='user.profile.bio', read_only=True)
+    rank_total_profit = serializers.IntegerField(source='user.profile.rank_total_profit', read_only=True)
+    rank_total_volume = serializers.IntegerField(source='user.profile.rank_total_volume', read_only=True)
+    rank_monthly_profit = serializers.IntegerField(source='user.profile.rank_monthly_profit', read_only=True)
+    rank_monthly_volume = serializers.IntegerField(source='user.profile.rank_monthly_volume', read_only=True)
+    rank_weekly_profit = serializers.IntegerField(source='user.profile.rank_weekly_profit', read_only=True)
+    rank_weekly_volume = serializers.IntegerField(source='user.profile.rank_weekly_volume', read_only=True)
+    medals = serializers.JSONField(source='user.profile.medals', read_only=True)
+
+    class Meta:
+        model = Comment
+        fields = ['comment_id', 'question', 'user', 'user_name', 'content', 
+                 'created_at', 'updated_at', 'like_count', 'is_liked',
+                 'volume', 'profit', 'bio', 'rank_total_profit', 'rank_total_volume',
+                 'rank_monthly_profit', 'rank_monthly_volume', 'rank_weekly_profit',
+                 'rank_weekly_volume', 'medals']
+        read_only_fields = ['comment_id', 'user', 'created_at', 'updated_at']
+
+    def get_like_count(self, obj):
+        return obj.like_number
+
+    def get_is_liked(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.likes.filter(id=request.user.id).exists()
+        return False
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Set default values if profile fields are None
+        data['volume'] = data.get('volume', '0.00')
+        data['profit'] = data.get('profit', '0.00')
+        data['bio'] = data.get('bio', '')
+        data['rank_total_profit'] = data.get('rank_total_profit', 0)
+        data['rank_total_volume'] = data.get('rank_total_volume', 0)
+        data['rank_monthly_profit'] = data.get('rank_monthly_profit', 0)
+        data['rank_monthly_volume'] = data.get('rank_monthly_volume', 0)
+        data['rank_weekly_profit'] = data.get('rank_weekly_profit', 0)
+        data['rank_weekly_volume'] = data.get('rank_weekly_volume', 0)
+        data['medals'] = data.get('medals', [])
+        return data
+
 class BetSerializer(serializers.ModelSerializer):
     class Meta:
         model = Bet
@@ -624,3 +679,58 @@ class NewsSerializer(serializers.ModelSerializer):
         # Create the news
         news = News.objects.create(**validated_data)
         return news    
+    
+class NewsCommentSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source='user.user_name', read_only=True)
+    like_count = serializers.SerializerMethodField()
+    is_liked = serializers.SerializerMethodField()
+    news = serializers.PrimaryKeyRelatedField(read_only=True)
+    
+    # Add profile fields
+    volume = serializers.DecimalField(source='user.profile.volume', max_digits=10, decimal_places=2, read_only=True)
+    profit = serializers.DecimalField(source='user.profile.profit', max_digits=10, decimal_places=2, read_only=True)
+    bio = serializers.CharField(source='user.profile.bio', read_only=True)
+    rank_total_profit = serializers.IntegerField(source='user.profile.rank_total_profit', read_only=True)
+    rank_total_volume = serializers.IntegerField(source='user.profile.rank_total_volume', read_only=True)
+    rank_monthly_profit = serializers.IntegerField(source='user.profile.rank_monthly_profit', read_only=True)
+    rank_monthly_volume = serializers.IntegerField(source='user.profile.rank_monthly_volume', read_only=True)
+    rank_weekly_profit = serializers.IntegerField(source='user.profile.rank_weekly_profit', read_only=True)
+    rank_weekly_volume = serializers.IntegerField(source='user.profile.rank_weekly_volume', read_only=True)
+    medals = serializers.JSONField(source='user.profile.medals', read_only=True)
+
+    class Meta:
+        model = NewsComment
+        fields = ['comment_id', 'news', 'user', 'user_name', 'content', 
+                 'created_at', 'updated_at', 'like_count', 'is_liked',
+                 'volume', 'profit', 'bio', 'rank_total_profit', 'rank_total_volume',
+                 'rank_monthly_profit', 'rank_monthly_volume', 'rank_weekly_profit',
+                 'rank_weekly_volume', 'medals']
+        read_only_fields = ['comment_id', 'user', 'created_at', 'updated_at']
+
+    def get_like_count(self, obj):
+        return obj.like_number
+
+    def get_is_liked(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.likes.filter(id=request.user.id).exists()
+        return False
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Set default values if profile fields are None
+        data['volume'] = data.get('volume', '0.00')
+        data['profit'] = data.get('profit', '0.00')
+        data['bio'] = data.get('bio', '')
+        data['rank_total_profit'] = data.get('rank_total_profit', 0)
+        data['rank_total_volume'] = data.get('rank_total_volume', 0)
+        data['rank_monthly_profit'] = data.get('rank_monthly_profit', 0)
+        data['rank_monthly_volume'] = data.get('rank_monthly_volume', 0)
+        data['rank_weekly_profit'] = data.get('rank_weekly_profit', 0)
+        data['rank_weekly_volume'] = data.get('rank_weekly_volume', 0)
+        data['medals'] = data.get('medals', [])
+        return data

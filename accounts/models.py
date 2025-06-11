@@ -372,16 +372,22 @@ class News(models.Model):
 # Comment Model
 class Comment(models.Model):
     comment_id = models.AutoField(primary_key=True)
-    question = models.ForeignKey(Question, on_delete=models.CASCADE)
-    news = models.ForeignKey(News, on_delete=models.CASCADE)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, to_field='id')  # Referencing 'user_id'
-    like_number = models.IntegerField()
-    comment_date = models.DateField()
-    comment_time = models.TimeField()
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='comments')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='comments')
+    content = models.TextField()
+    created_at = models.DateTimeField(default=now)
+    updated_at = models.DateTimeField(auto_now=True)
+    likes = models.ManyToManyField(User, related_name='liked_comments', blank=True)
+    like_number = models.IntegerField(default=0)  # Non-nullable with default 0
+
+    class Meta:
+        ordering = ['-created_at']
 
     def __str__(self):
-        return f"Comment {self.comment_id}"
+        return f'Comment by {self.user.user_name} on {self.question.question_topic}'
 
+    def like_count(self):
+        return self.like_number
 
 # Wallet Model (related to User)
 class Wallet(models.Model):
@@ -504,4 +510,22 @@ class Task(models.Model):
             )
             
             return True
-      
+
+class NewsComment(models.Model):
+    comment_id = models.AutoField(primary_key=True)
+    news = models.ForeignKey(News, on_delete=models.CASCADE, related_name='comments')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='news_comments')
+    content = models.TextField()
+    created_at = models.DateTimeField(default=now)
+    updated_at = models.DateTimeField(auto_now=True)
+    likes = models.ManyToManyField(User, related_name='liked_news_comments', blank=True)
+    like_number = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Comment by {self.user.user_name} on {self.news.news_topic}'
+
+    def like_count(self):
+        return self.like_number
