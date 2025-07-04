@@ -358,6 +358,7 @@ class WalletLeaderboardViewSet(viewsets.ViewSet):
         from django.db.models import Sum, FloatField, DecimalField
         from django.db.models.functions import Coalesce
         from decimal import Decimal
+        from .models import Profile
         
         # Initialize default values
         volume = Decimal('0.0')
@@ -467,25 +468,47 @@ class WalletLeaderboardViewSet(viewsets.ViewSet):
             # Format volume rankings
             for i, data in enumerate(sorted_volume, 1):
                 user = data['user']
+                try:
+                    profile = user.profile
+                    bio = profile.bio
+                    medals = profile.medals or []
+                except Profile.DoesNotExist:
+                    bio = ""
+                    medals = []
+                    
                 response_data[period]['volume'].append({
                     'user_id': user.id,
                     'user_name': user.user_name,
                     'avatar': user.avatar,
                     'rank': i,
                     'value': data[period]['volume'],
-                    'profit': data[period]['profit']
+                    'profit': data[period]['profit'],
+                    'total_balance': float(user.total_balance),
+                    'biography': bio,
+                    'medals': medals
                 })
             
             # Format profit rankings
             for i, data in enumerate(sorted_profit, 1):
                 user = data['user']
+                try:
+                    profile = user.profile
+                    bio = profile.bio
+                    medals = profile.medals or []
+                except Profile.DoesNotExist:
+                    bio = ""
+                    medals = []
+                    
                 response_data[period]['profit'].append({
                     'user_id': user.id,
                     'user_name': user.user_name,
                     'avatar': user.avatar,
                     'rank': i,
                     'value': data[period]['profit'],
-                    'volume': data[period]['volume']
+                    'volume': data[period]['volume'],
+                    'total_balance': float(user.total_balance),
+                    'biography': bio,
+                    'medals': medals
                 })
         
         return Response(response_data)
