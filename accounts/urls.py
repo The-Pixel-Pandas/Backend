@@ -2,16 +2,16 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_nested import routers
 from .views import (
-    LoginView, SignupView, ProfileViewSet, LeaderboardViewSet, get_csrf_token,
+    LoginView, SignupView, ProfileViewSet, WalletLeaderboardViewSet, get_csrf_token,
     WalletView, TransactionHistoryView, ResolveQuestionView, PlaceBetView,
     QuestionViewSet, OptionListCreateView, OptionListView, TaskViewSet,
-    NewsViewSet, ProfileUpdateView, UpdateUserBalanceView, CommentViewSet ,NewsCommentViewSet
+    NewsViewSet, ProfileUpdateView, UpdateUserBalanceView, CommentViewSet, NewsCommentViewSet
 )
 from .views import SiteBalanceView
 
 router = DefaultRouter()
 router.register(r'profiles', ProfileViewSet, basename='profile')
-router.register(r'leaderboards', LeaderboardViewSet, basename='leaderboard')
+router.register(r'wallet-leaderboards', WalletLeaderboardViewSet, basename='wallet-leaderboard')
 router.register(r'tasks', TaskViewSet, basename='task')
 router.register(r'news', NewsViewSet, basename='news')
 router.register(r'questions', QuestionViewSet, basename='question')

@@ -127,6 +127,19 @@ class User(AbstractBaseUser, PermissionsMixin):
         self.monthly_rank = self.get_rank('monthly_profit')
         self.weekly_rank = self.get_rank('weekly_profit')
         
+        # Also update the profile's rank fields
+        try:
+            profile = self.profile
+            profile.rank_total_volume = self.get_rank('all_time_volume')
+            profile.rank_total_profit = self.get_rank('all_time_profit')
+            profile.rank_monthly_volume = self.get_rank('monthly_volume')
+            profile.rank_monthly_profit = self.monthly_rank
+            profile.rank_weekly_volume = self.get_rank('weekly_volume')
+            profile.rank_weekly_profit = self.weekly_rank
+            profile.save()
+        except Profile.DoesNotExist:
+            pass  # Profile doesn't exist yet, will be created when needed
+            
         self.save()
 
     # Method to update user's token
@@ -194,7 +207,10 @@ class TransactionHistory(models.Model):
 
 @receiver(post_save, sender=TransactionHistory)
 def update_profile_on_transaction_save(sender, instance, **kwargs):
-    """Update the related Profile's volume (total bets) and profit (total wins)."""
+    """
+    Update the related Profile's volume (total bets), profit (total wins),
+    and update the user's ranks.
+    """
     user = instance.user
     try:
         profile = user.profile  # OneToOne relation
@@ -219,6 +235,9 @@ def update_profile_on_transaction_save(sender, instance, **kwargs):
     profile.volume = max(total_volume, Decimal('0'))
     profile.profit = max(total_profit, Decimal('0'))
     profile.save()
+    
+    # Update user's ranks
+    user.update_ranks()
 
 
 @receiver(post_delete, sender=TransactionHistory)

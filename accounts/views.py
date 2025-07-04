@@ -4,16 +4,18 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import generics, status, viewsets, permissions
 from rest_framework.response import Response
-from rest_framework.views import APIView
-from rest_framework.viewsets import ModelViewSet
+from rest_framework.views import APIView, View
+from rest_framework.viewsets import ModelViewSet, ViewSet
 from rest_framework.decorators import action, api_view
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.generics import CreateAPIView
 from rest_framework.pagination import PageNumberPagination
-from django.db.models import Q, Sum
-from django.db.models.functions import Abs
-from .models import User, Profile, Wallet, Leaderboard, Task, News, Comment, NewsComment
+from django.db.models import Q, Sum, F, Case, When, Value, IntegerField, FloatField
+from django.db.models.functions import Abs, Coalesce
+from django.utils import timezone
+from datetime import timedelta
+from .models import User, Profile, Wallet, Leaderboard, Task, News, Comment, NewsComment, TransactionHistory
 from .serializer import UserSerializer, ProfileSerializer, LoginSerializer, LeaderboardSerializer, LeaderboardResponseSerializer, TaskSerializer, TaskCompletionSerializer, NewsSerializer, CommentSerializer, NewsCommentSerializer
 from .utils import get_tokens_for_user
 from rest_framework.views import APIView
@@ -333,6 +335,162 @@ class ProfileViewSet(viewsets.GenericViewSet):
 def get_csrf_token(request):
     return JsonResponse({'detail': 'CSRF cookie set'})
 
+class WalletLeaderboardViewSet(viewsets.ViewSet):
+    """
+    ViewSet for wallet-based leaderboards showing rankings by volume and profit
+    across different time periods (all-time, monthly, weekly).
+    """
+    permission_classes = [IsAuthenticated]
+    http_method_names = ['get']
+
+    def _get_ranked_users(self, queryset, order_by_field, limit=20):
+        """Helper to get ranked users with their positions."""
+        users = list(queryset.order_by(f'-{order_by_field}')[:limit])
+        
+        # Add rank to each user
+        for i, user in enumerate(users, 1):
+            user.rank = i
+            
+        return users
+
+    def _get_wallet_metrics(self, user, time_filter=None):
+        """Calculate wallet metrics for a user with optional time filter."""
+        from django.db.models import Sum, FloatField, DecimalField
+        from django.db.models.functions import Coalesce
+        from decimal import Decimal
+        
+        # Initialize default values
+        volume = Decimal('0.0')
+        profit = Decimal('0.0')
+        
+        # Calculate volume (sum of all BET transactions)
+        volume_queryset = TransactionHistory.objects.filter(
+            user=user,
+            transaction_type='BET'
+        )
+        
+        # Calculate profit (sum of all WIN transactions)
+        profit_queryset = TransactionHistory.objects.filter(
+            user=user,
+            transaction_type='WIN'
+        )
+        
+        # Apply time filter if provided
+        if time_filter:
+            volume_queryset = volume_queryset.filter(date__gte=time_filter)
+            profit_queryset = profit_queryset.filter(date__gte=time_filter)
+        
+        # Calculate volume sum using direct aggregation with output_field
+        volume_agg = volume_queryset.aggregate(
+            total=Sum('amount', output_field=DecimalField())
+        )
+        volume = abs(volume_agg['total'] or Decimal('0.0'))
+        
+        # Calculate profit sum using direct aggregation with output_field
+        profit_agg = profit_queryset.aggregate(
+            total=Sum('amount', output_field=DecimalField())
+        )
+        profit = profit_agg['total'] or Decimal('0.0')
+        
+        # Convert to float only at the end for the response
+        return {
+            'volume': float(volume),
+            'profit': float(profit)
+        }
+
+    def list(self, request, *args, **kwargs):
+        """
+        Get leaderboard rankings for wallet metrics.
+        Returns top 20 users for each category (volume/profit) and time period.
+        """
+        now = timezone.now()
+        last_week = now - timedelta(days=7)
+        last_month = now - timedelta(days=30)
+        
+        # Get all users with transactions
+        user_ids = set(
+            TransactionHistory.objects.values_list('user_id', flat=True).distinct()
+        )
+        users = User.objects.filter(id__in=user_ids).prefetch_related('profile')
+        
+        # Calculate metrics for each user
+        user_metrics = {}
+        for user in users:
+            # All-time metrics
+            all_time = self._get_wallet_metrics(user)
+            
+            # Monthly metrics
+            monthly = self._get_wallet_metrics(user, last_month)
+            
+            # Weekly metrics
+            weekly = self._get_wallet_metrics(user, last_week)
+            
+            user_metrics[user.id] = {
+                'user': user,
+                'all_time': all_time,
+                'monthly': monthly,
+                'weekly': weekly,
+            }
+        
+        # Prepare response data
+        response_data = {
+            'all_time': {
+                'volume': [],
+                'profit': []
+            },
+            'monthly': {
+                'volume': [],
+                'profit': []
+            },
+            'weekly': {
+                'volume': [],
+                'profit': []
+            }
+        }
+        
+        # Rank users for each category
+        for period in ['all_time', 'monthly', 'weekly']:
+            # Sort by volume
+            sorted_volume = sorted(
+                user_metrics.values(),
+                key=lambda x: x[period]['volume'],
+                reverse=True
+            )[:20]  # Top 20
+            
+            # Sort by profit
+            sorted_profit = sorted(
+                user_metrics.values(),
+                key=lambda x: x[period]['profit'],
+                reverse=True
+            )[:20]  # Top 20
+            
+            # Format volume rankings
+            for i, data in enumerate(sorted_volume, 1):
+                user = data['user']
+                response_data[period]['volume'].append({
+                    'user_id': user.id,
+                    'user_name': user.user_name,
+                    'avatar': user.avatar,
+                    'rank': i,
+                    'value': data[period]['volume'],
+                    'profit': data[period]['profit']
+                })
+            
+            # Format profit rankings
+            for i, data in enumerate(sorted_profit, 1):
+                user = data['user']
+                response_data[period]['profit'].append({
+                    'user_id': user.id,
+                    'user_name': user.user_name,
+                    'avatar': user.avatar,
+                    'rank': i,
+                    'value': data[period]['profit'],
+                    'volume': data[period]['volume']
+                })
+        
+        return Response(response_data)
+
+
 class LeaderboardViewSet(viewsets.ViewSet):
     serializer_class = LeaderboardSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -433,28 +591,45 @@ class WalletView(APIView):
     permission_classes = [IsAuthenticated]  # Ensures only authenticated users can access this view
 
     def get(self, request, *args, **kwargs):
+        from django.utils import timezone
+        from datetime import timedelta
+        
         # Get the user's balance directly from the User model
         user = request.user
+        now = timezone.now()
         
-        # Calculate volume (total BET amounts) and profit (total WIN amounts)
-        volume = (
-            TransactionHistory.objects.filter(user=user, transaction_type='BET')
-            .aggregate(total=Sum(Abs('amount')))
-            .get('total') or 0
-        )
-        profit = (
-            TransactionHistory.objects.filter(user=user, transaction_type='WIN')
-            .aggregate(total=Sum(Abs('amount')))
-            .get('total') or 0
-        )
-        volume = max(volume, 0)
-        profit = max(profit, 0)
+        # Calculate date ranges
+        last_week = now - timedelta(days=7)
+        last_month = now - timedelta(days=30)
+        
+        # Helper function to calculate volume/profit for a given time period
+        def calculate_metrics(transaction_type, date_filter=None):
+            queryset = TransactionHistory.objects.filter(
+                user=user, 
+                transaction_type=transaction_type
+            )
+            
+            if date_filter:
+                queryset = queryset.filter(date__gte=date_filter)
+            
+            result = queryset.aggregate(total=Sum(Abs('amount'))).get('total') or 0
+            return max(result, 0)
+        
+        # Calculate volume metrics
+        volume_all_time = calculate_metrics('BET')
+        volume_last_month = calculate_metrics('BET', last_month)
+        volume_last_week = calculate_metrics('BET', last_week)
+        
+        # Calculate profit metrics
+        profit_all_time = calculate_metrics('WIN')
+        profit_last_month = calculate_metrics('WIN', last_month)
+        profit_last_week = calculate_metrics('WIN', last_week)
 
-        # Sync profile metrics
+        # Sync profile metrics (using all-time values)
         try:
             profile = Profile.objects.get(user=user)
-            profile.volume = volume
-            profile.profit = profit
+            profile.volume = volume_all_time
+            profile.profit = profit_all_time
             profile.save()
         except Profile.DoesNotExist:
             pass
@@ -463,8 +638,16 @@ class WalletView(APIView):
             "user_id": user.id,
             "user_name": user.user_name,
             "total_balance": float(user.total_balance),
-            "volume": float(volume),
-            "profit": float(profit)
+            "volume": {
+                "all_time": float(volume_all_time),
+                "last_month": float(volume_last_month),
+                "last_week": float(volume_last_week)
+            },
+            "profit": {
+                "all_time": float(profit_all_time),
+                "last_month": float(profit_last_month),
+                "last_week": float(profit_last_week)
+            }
         })
 
 class TransactionHistoryView(APIView):

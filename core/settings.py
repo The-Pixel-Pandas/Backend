@@ -15,7 +15,7 @@ import os
 from dotenv import load_dotenv
 
 # Load environment variables from .env file based on environment
-ENV = os.getenv('DJANGO_ENV', 'test') #efault to production if not specified
+ENV = os.getenv('DJANGO_ENV', 'production') #efault to production if not specified
 env_file = f'.env.{ENV}'
 load_dotenv(env_file)
 
@@ -30,7 +30,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-v(rq1ogk007#2axhaoa(hri6u%kl1b^v_hrhsn8#ib$q_=1e#q"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = [
 '*'
@@ -183,6 +183,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "https://fervent-antonelli--udq9vabd.liara.run"
+    "https://pixelpandas-zeta.vercel.app/"
+    "https://the-pixel-pandas.liara.run/"
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -191,6 +193,8 @@ CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "https://fervent-antonelli--udq9vabd.liara.run"
+    "https://pixelpandas-zeta.vercel.app/"
+    "https://the-pixel-pandas.liara.run/"
 ]
 
 CSRF_COOKIE_SAMESITE = 'Lax'
