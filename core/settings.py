@@ -15,7 +15,7 @@ import os
 from dotenv import load_dotenv
 
 # Load environment variables from .env file based on environment
-ENV = os.getenv('DJANGO_ENV', 'production') #efault to production if not specified
+ENV = os.getenv('DJANGO_ENV', 'test') #efault to production if not specified
 env_file = f'.env.{ENV}'
 load_dotenv(env_file)
 
