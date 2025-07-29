@@ -15,7 +15,7 @@ import os
 from dotenv import load_dotenv
 
 # Load environment variables from .env file based on environment
-ENV = os.getenv('DJANGO_ENV', 'production') #efault to production if not specified
+ENV = os.getenv('DJANGO_ENV', 'test') #efault to production if not specified
 env_file = f'.env.{ENV}'
 load_dotenv(env_file)
 
@@ -42,6 +42,7 @@ AUTH_USER_MODEL = 'accounts.User'  # Ensure you're using the User model from you
 
 
 INSTALLED_APPS = [
+    'jazzmin',
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -169,6 +170,9 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, "static"),
+]
 
 # Media files (Uploaded files)
 MEDIA_URL = '/media/'
@@ -199,3 +203,37 @@ CSRF_COOKIE_SECURE = False  # Set to True in production
 CSRF_COOKIE_HTTPONLY = False
 CSRF_USE_SESSIONS = False
 CSRF_COOKIE_DOMAIN = None  # This allows the cookie to be set for localhost
+
+JAZZMIN_SETTINGS = {
+    "site_title": "Tahlil Admin",
+    "site_header": "Tahlil Administration",
+    "site_brand": "Tahlil",
+    "welcome_sign": "Welcome to Tahlil Admin Panel",
+    "copyright": "Tahlil",
+    "search_model": ["accounts.User", "accounts.News", "accounts.Question"],
+    "show_sidebar": True,
+    "navigation_expanded": True,
+    "order_with_respect_to": ["accounts", "auth"],
+    "icons": {
+        "accounts.User": "fas fa-user",
+        "accounts.News": "fas fa-newspaper",
+        "accounts.Question": "fas fa-question",
+        "accounts.Comment": "fas fa-comments",
+        "accounts.Profile": "fas fa-id-badge",
+        "accounts.Task": "fas fa-tasks",
+        "accounts.Wallet": "fas fa-wallet",
+        "accounts.Leaderboard": "fas fa-trophy",
+        "accounts.TransactionHistory": "fas fa-history",
+        "accounts.SiteBalance": "fas fa-balance-scale",
+        "accounts.Option": "fas fa-check-square",
+        "accounts.Bet": "fas fa-coins",
+        "accounts.NewsComment": "fas fa-comment-dots",
+    },
+    "default_icon_parents": "fas fa-chevron-circle-right",
+    "default_icon_children": "fas fa-circle",
+    "related_modal_active": True,
+    # Purple color scheme
+    "theme": "purple",
+    "custom_css": "jazzmin_custom.css",
+    "custom_js": None,
+}

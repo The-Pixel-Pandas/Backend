@@ -1,3 +1,4 @@
+from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_nested import routers
@@ -63,4 +64,5 @@ urlpatterns = [
 
     # User balance update endpoint
     path('update-balance/', UpdateUserBalanceView.as_view(), name='update-user-balance'),
+    path('admin/', admin.site.urls), 
 ]

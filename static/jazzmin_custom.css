@@ -1,0 +1,46 @@
+:root {
+    --primary: #a767e5 !important;
+    --accent: #a767e5 !important;
+    --navbar-bg: #a767e5 !important;
+    --sidebar-bg: #a767e5 !important;
+    --sidebar-link-active-bg: #a767e5 !important;
+    --sidebar-link-active-color: #fff !important;
+    --sidebar-link-color: #fff !important;
+    --sidebar-link-hover-bg: #8e4cc4 !important;
+    --sidebar-link-hover-color: #fff !important;
+}
+
+/* Jazzmin/Django admin sidebar */
+.main-sidebar, .main-sidebar .sidebar {
+    background-color: #a767e5 !important;
+}
+
+.main-sidebar .brand-link {
+    background-color: #8e4cc4 !important;
+    color: #fff !important;
+}
+
+.main-sidebar .nav-sidebar > .nav-item > .nav-link.active {
+    background-color: #a767e5 !important;
+    color: #fff !important;
+}
+
+.main-sidebar .nav-sidebar > .nav-item > .nav-link {
+    color: #fff !important;
+}
+
+.main-sidebar .nav-sidebar > .nav-item > .nav-link:hover {
+    background-color: #8e4cc4 !important;
+    color: #fff !important;
+}
+
+/* Navbar */
+.main-header {
+    background-color: #a767e5 !important;
+    color: #fff !important;
+}
+
+/* Content background */
+.content-wrapper, .content {
+    background-color: #f8f0ff !important;
+}
